@@ -1,0 +1,34 @@
+// What the pipeline should generate. One entry per asset; ids match game/data/assets.jsonc.
+// Not wired to a script yet: this is the input format for the batch generator to come.
+// "describe" is the only creative part; the style template in prompts/style.md wraps it.
+{
+  "assets": [
+    {
+      "id": "raptor",
+      "kind": "dino",
+      "describe": "lean velociraptor, long stiff tail, small arms, alert head",
+      "colors": { "base": "#6B8E4E", "belly": "#C9B98A" },
+      "views": ["left", "front", "back"],
+      "size": 2.0,
+      "tris": 3000
+    },
+    {
+      "id": "trex",
+      "kind": "dino",
+      "describe": "massive tyrannosaurus, huge head, thick legs, tiny arms",
+      "colors": { "base": "#9C7A55", "belly": "#D9C49A" },
+      "views": ["left", "front", "back"],
+      "size": 5.0,
+      "tris": 4000
+    },
+    {
+      "id": "laser_cannon",
+      "kind": "weapon",
+      "describe": "chunky sci-fi laser cannon turret, single barrel, round base mount",
+      "colors": { "base": "#8C8F99", "belly": "" },
+      "views": ["left"],
+      "size": 0.8,
+      "tris": 800
+    }
+  ]
+}

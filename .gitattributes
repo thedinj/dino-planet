@@ -1,0 +1,27 @@
+# Normalize text line endings; keep Windows-only files as CRLF.
+* text=auto
+*.sln text eol=crlf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Godot text formats
+*.gd text eol=lf
+*.gdshader text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+*.godot text eol=lf
+*.import text eol=lf
+
+# Binary assets: never diff or convert line endings.
+# If the repo grows heavy, move these to Git LFS with `git lfs track "*.glb"` etc.
+*.glb binary
+*.gltf text
+*.blend binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.ttf binary
+*.otf binary

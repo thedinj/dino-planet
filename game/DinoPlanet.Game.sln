@@ -1,0 +1,38 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DinoPlanet.Game", "DinoPlanet.Game.csproj", "{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DinoPlanet.Core", "..\src\Core\DinoPlanet.Core.csproj", "{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+		ExportDebug|Any CPU = ExportDebug|Any CPU
+		ExportRelease|Any CPU = ExportRelease|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{5DB8D7A9-28C6-48E5-AC50-76EA04C6AC04}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{064A99BB-99D6-4538-8C83-C5BD12AAF3ED}.ExportRelease|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

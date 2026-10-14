@@ -1,0 +1,20 @@
+<Project Sdk="Godot.NET.Sdk/4.6.2">
+
+  <!--
+    The thin Godot layer: rendering, input, audio, debug tools.
+    Game rules belong in src/Core, not here.
+    Match the Godot.NET.Sdk version above to your installed Godot (Help -> About).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>DinoPlanet.Game</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\Core\DinoPlanet.Core.csproj" />
+  </ItemGroup>
+
+</Project>

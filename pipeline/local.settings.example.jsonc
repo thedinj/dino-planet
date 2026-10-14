@@ -1,0 +1,19 @@
+// Copy this file to local.settings.jsonc (gitignored) and fix the paths for your machine.
+// Pipeline scripts read it so nothing in the repo hard-codes a drive letter.
+{
+  // ComfyUI Desktop install (holds the AI models; tens of GB, never in the repo).
+  "comfyUiDir": "D:\\AI\\ComfyUI",
+
+  // Where ComfyUI's server listens (ComfyUI Desktop default shown).
+  "comfyUiUrl": "http://127.0.0.1:8000",
+
+  // Work-in-progress generations: reference images, raw meshes, turntables, rejects.
+  // Relative to the repo root; work/ is gitignored.
+  "workDir": "work",
+
+  // Blender 4.2+ executable, used headless for cleanup and turntable renders.
+  "blenderExe": "C:\\Program Files\\Blender Foundation\\Blender 4.5\\blender.exe",
+
+  // Godot .NET editor executable, for headless import and smoke tests.
+  "godotExe": "C:\\Program Files\\Godot\\Godot_v4.6.2-stable_mono_win64.exe"
+}

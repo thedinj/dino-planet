@@ -1,0 +1,28 @@
+# Godot
+.godot/
+*.translation
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+.idea/
+TestResults/
+
+# Pipeline: machine-specific paths and Python caches
+pipeline/local.settings.jsonc
+__pycache__/
+*.pyc
+
+# Big stuff belongs outside the repo (see pipeline/README.md), but just in case:
+*.safetensors
+*.ckpt
+*.blend1
+
+# Claude Code: personal overrides and hook state
+.claude/settings.local.json
+.claude/hooks/.last-test-pass
+
+# Pipeline work in progress: reference images, raw meshes, turntables, rejects
+/work/

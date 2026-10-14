@@ -1,0 +1,23 @@
+; Engine configuration file.
+; Kept minimal on purpose: almost everything (input, camera, lighting, scenes) is set up in C#.
+
+config_version=5
+
+[application]
+
+config/name="Dino Planet"
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.6", "C#", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[dotnet]
+
+project/assembly_name="DinoPlanet.Game"
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
