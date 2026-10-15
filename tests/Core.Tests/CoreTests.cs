@@ -55,15 +55,15 @@ public class DataTests
     public void Game_asset_registry_loads()
     {
         var registry = AssetRegistry.FromJson(TestWorlds.DataFile("assets.jsonc"));
-        Assert.Contains(registry.All, a => a.Id == "raptor" && a.Kind == AssetKind.Dino);
-        Assert.True(registry.Get("raptor").Sockets.ContainsKey("turret"));
+        Assert.Contains(registry.All, a => a.Id == "velociraptor" && a.Kind == AssetKind.Dino);
+        Assert.True(registry.Get("velociraptor").Sockets.ContainsKey("turret"));
     }
 
     [Fact]
     public void Game_tuning_loads_and_lookups_ignore_case()
     {
         var tuning = Tuning.FromJson(TestWorlds.DataFile("tuning.jsonc"));
-        Assert.True(tuning.Mover("RAPTOR").MoveSpeed > 0);
+        Assert.True(tuning.Mover("VELOCIRAPTOR").MoveSpeed > 0);
         Assert.True(tuning.Weapon("laser_cannon").Damage > 0);
     }
 

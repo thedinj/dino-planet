@@ -30,7 +30,7 @@ public static class TestArena
         }
 
         // Player.
-        var player = world.Spawn("raptor", Vector3.Zero, 0f, Faction.Player, new PlayerControlled());
+        var player = world.Spawn("velociraptor", Vector3.Zero, 0f, Faction.Player, new PlayerControlled());
         world.SpawnAttached(player, "saddle", "rider");
         world.SpawnAttached(player, "turret", "laser_cannon", new TurretAim(triggerFromPlayer: true));
 
@@ -39,7 +39,7 @@ public static class TestArena
         {
             float angle = MathF.PI * 2f * i / 3f + (float)world.Rng.NextDouble();
             var pos = new Vector3(MathF.Cos(angle), 0f, MathF.Sin(angle)) * 22f;
-            var raptor = world.Spawn("raptor", pos, angle, Faction.Enemy,
+            var raptor = world.Spawn("velociraptor", pos, angle, Faction.Enemy,
                 new ChaseNearestHostile(sightRange: 20f, stopDistance: 8f), new Wander(radius: 8f));
             world.SpawnAttached(raptor, "turret", "laser_cannon", new TurretAim());
         }

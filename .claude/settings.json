@@ -15,6 +15,8 @@
       "PowerShell(pwsh -NoProfile -File tools/blender.ps1 *)",
       "PowerShell(./tools/godot.ps1 *)",
       "PowerShell(./tools/blender.ps1 *)",
+      "Bash(python pipeline/comfy_gen.py *)",
+      "PowerShell(python pipeline/comfy_gen.py *)",
 
       "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(git show *)",
       "Bash(git add *)", "Bash(git commit *)", "Bash(git ls-files *)", "Bash(git rev-parse *)",

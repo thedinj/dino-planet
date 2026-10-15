@@ -1,12 +1,13 @@
 ---
 name: new-asset
-description: Add a new game asset (dino, weapon, rider, prop or projectile) to Dino Planet - the pipeline manifest entry, the asset registry entry and the tuning entry - then run the tests. Use when the user asks to add a new dino, gun, prop or other asset.
+description: Register a new game asset (dino, weapon, rider, prop or projectile) in Dino Planet's data files - the pipeline manifest entry, the asset registry entry and the tuning entry - then run the tests. Generates no model; that's /generate-model. Use when the user asks to add a new dino, gun, prop or other asset.
 argument-hint: <asset-id> [kind] [short description]
 ---
 
 # /new-asset
 
-Add one asset end to end so it shows up in-game as a placeholder until a model exists.
+Register one asset so the game knows about it and draws a placeholder for it. This step
+generates no art. It writes the data entries that `/generate-model <id>` reads to make the model.
 
 Arguments: `$ARGUMENTS`. The first word is the id. Ids are `snake_case`, so turn
 `raptor-scout` into `raptor_scout`. Anything after it is the kind and/or a description.

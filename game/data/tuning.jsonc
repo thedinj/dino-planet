@@ -6,9 +6,9 @@
   "enemy":  { "damage": 0.5, "fireRate": 0.35 },
 
   "movers": {
-    "raptor": { "moveSpeed": 7.0, "turnRateDegrees": 360, "maxHealth": 60 },
-    "trex":   { "moveSpeed": 3.5, "turnRateDegrees": 110, "maxHealth": 300 },
-    "rider":  { "moveSpeed": 0,   "turnRateDegrees": 0,   "maxHealth": 10 }
+    "velociraptor": { "moveSpeed": 7.0, "turnRateDegrees": 360, "maxHealth": 60 },
+    "trex":         { "moveSpeed": 3.5, "turnRateDegrees": 110, "maxHealth": 300 },
+    "rider":        { "moveSpeed": 0,   "turnRateDegrees": 0,   "maxHealth": 10 }
   },
   "weapons": {
     "laser_cannon": {

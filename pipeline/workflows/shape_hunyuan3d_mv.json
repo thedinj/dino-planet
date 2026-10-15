@@ -1,0 +1,93 @@
+{
+  "1": {
+    "class_type": "ImageOnlyCheckpointLoader",
+    "_meta": { "title": "checkpoint" },
+    "inputs": { "ckpt_name": "hunyuan3d-dit-v2-mv.safetensors" }
+  },
+  "2": {
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": { "title": "model_sampling" },
+    "inputs": { "model": ["1", 0], "shift": 1.0 }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "_meta": { "title": "image_front" },
+    "inputs": { "image": "" }
+  },
+  "11": {
+    "class_type": "CLIPVisionEncode",
+    "_meta": { "title": "encode_front" },
+    "inputs": { "clip_vision": ["1", 1], "image": ["10", 0], "crop": "none" }
+  },
+  "12": {
+    "class_type": "LoadImage",
+    "_meta": { "title": "image_left" },
+    "inputs": { "image": "" }
+  },
+  "13": {
+    "class_type": "CLIPVisionEncode",
+    "_meta": { "title": "encode_left" },
+    "inputs": { "clip_vision": ["1", 1], "image": ["12", 0], "crop": "none" }
+  },
+  "14": {
+    "class_type": "LoadImage",
+    "_meta": { "title": "image_back" },
+    "inputs": { "image": "" }
+  },
+  "15": {
+    "class_type": "CLIPVisionEncode",
+    "_meta": { "title": "encode_back" },
+    "inputs": { "clip_vision": ["1", 1], "image": ["14", 0], "crop": "none" }
+  },
+  "16": {
+    "class_type": "LoadImage",
+    "_meta": { "title": "image_right" },
+    "inputs": { "image": "" }
+  },
+  "17": {
+    "class_type": "CLIPVisionEncode",
+    "_meta": { "title": "encode_right" },
+    "inputs": { "clip_vision": ["1", 1], "image": ["16", 0], "crop": "none" }
+  },
+  "20": {
+    "class_type": "Hunyuan3Dv2ConditioningMultiView",
+    "_meta": { "title": "conditioning" },
+    "inputs": { "front": ["11", 0], "left": ["13", 0], "back": ["15", 0], "right": ["17", 0] }
+  },
+  "21": {
+    "class_type": "EmptyLatentHunyuan3Dv2",
+    "_meta": { "title": "latent" },
+    "inputs": { "resolution": 3072, "batch_size": 1 }
+  },
+  "22": {
+    "class_type": "KSampler",
+    "_meta": { "title": "sampler" },
+    "inputs": {
+      "model": ["2", 0],
+      "positive": ["20", 0],
+      "negative": ["20", 1],
+      "latent_image": ["21", 0],
+      "seed": 0,
+      "steps": 30,
+      "cfg": 5.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "23": {
+    "class_type": "VAEDecodeHunyuan3D",
+    "_meta": { "title": "decode" },
+    "inputs": { "samples": ["22", 0], "vae": ["1", 2], "num_chunks": 8000, "octree_resolution": 256 }
+  },
+  "24": {
+    "class_type": "VoxelToMesh",
+    "_meta": { "title": "to_mesh" },
+    "inputs": { "voxel": ["23", 0], "algorithm": "surface net", "threshold": 0.6 }
+  },
+  "25": {
+    "class_type": "SaveGLB",
+    "_meta": { "title": "save" },
+    "inputs": { "mesh": ["24", 0], "filename_prefix": "dinoplanet/mesh" }
+  }
+}

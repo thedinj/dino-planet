@@ -69,12 +69,15 @@ they're pre-approved in `.claude/settings.json` and keep machine paths out of th
 
 Claude tooling in `.claude/`: a Stop hook runs `dotnet test` when a turn ends with uncommitted
 changes under `src/`, `tests/` or `game/data/`, and sends failures back to Claude. Skills:
-`/new-asset <id>`, `/visual-check`, `/devlog` (entries go in `docs/devlog/`).
+`/new-asset <id>` (registers an asset in the data files; no art), `/generate-model <id>`
+(ComfyUI -> Blender -> `game/models/<id>.glb`, with a user sign-off at each review gate),
+`/visual-check`, `/devlog` (entries go in `docs/devlog/`).
 
 ## Asset pipeline
 
 See `pipeline/README.md`. Generated models go in `game/models/` as `.glb`, cleaned by
-`pipeline/blender_cleanup.py`. Until a model exists, `Placeholders` draws a stand-in sized from
+`pipeline/blender_cleanup.py`. `pipeline/comfy_gen.py` drives ComfyUI (workflows in
+`pipeline/workflows/`), and `pipeline/blender_turntable.py` renders review sheets of a mesh. Until a model exists, `Placeholders` draws a stand-in sized from
 the asset's collider. Press F3 in-game to see socket markers.
 
 **Keep big files out of git.** ComfyUI and its AI models live outside the repo. Reference images,

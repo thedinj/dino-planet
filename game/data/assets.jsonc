@@ -5,9 +5,9 @@
 {
   "assets": [
     {
-      "id": "raptor",
+      "id": "velociraptor",
       "kind": "dino",
-      "model": "res://models/raptor.glb",
+      "model": "res://models/velociraptor.glb",
       "scale": 1.0,
       "modelYawDegrees": 0,
       "collider": { "radius": 0.6, "height": 1.4 },

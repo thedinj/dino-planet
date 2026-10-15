@@ -1,14 +1,20 @@
 # ComfyUI workflows
 
-Save the workflows the pipeline uses here so they're versioned with the game.
+API-format workflows that `../comfy_gen.py` sends to ComfyUI's HTTP API:
 
-For each one, once it works in ComfyUI:
+| File | Does | Nodes the script edits (by title) |
+|---|---|---|
+| `reference_sdxl.json` | prompt -> 4 SDXL reference images | `positive`, `negative`, `latent`, `sampler`, `save` |
+| `shape_hunyuan3d_mv.json` | reference view(s) -> raw Hunyuan3D-2mv mesh | `checkpoint`, `image_<view>`, `encode_<view>`, `conditioning`, `sampler`, `decode`, `save` |
+
+The script finds nodes by their `_meta.title`, not by id. Views that aren't passed to `shape`
+are removed from the graph before it's queued.
+
+To change a workflow in ComfyUI's editor and bring it back:
 
 1. Settings (gear) -> enable **Dev mode** (shows the API export option).
-2. Workflow menu -> **Export (API)**. Save it here, e.g.
-   - `reference_sdxl.json` — prompt to reference image
-   - `shape_hunyuan3d_mv.json` — reference image(s) to raw mesh
-3. Also save the normal (UI) export with a `.ui.json` suffix, so it can be reopened and edited.
+2. Load and edit the workflow, then Workflow menu -> **Export (API)** and save it over the file here.
+3. Keep the node titles in the table above (right-click a node -> Title), or the script can't find them.
+4. Also save the normal (UI) export with a `.ui.json` suffix, so it can be reopened and edited.
 
-The API-format files are what the batch script will send to ComfyUI's HTTP API, swapping in the
-prompt, seed and image names for each asset in `../manifest.jsonc`.
+Check the result with `python pipeline/comfy_gen.py check`.

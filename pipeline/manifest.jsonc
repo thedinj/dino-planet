@@ -4,9 +4,9 @@
 {
   "assets": [
     {
-      "id": "raptor",
+      "id": "velociraptor",
       "kind": "dino",
-      "describe": "lean velociraptor, long stiff tail, small arms, alert head",
+      "describe": "lean velociraptor, long stiff tail, small arms, alert head, small boxy cannon pod strapped to its back",
       "colors": { "base": "#6B8E4E", "belly": "#C9B98A" },
       "views": ["left", "front", "back"],
       "size": 2.0,

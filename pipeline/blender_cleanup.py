@@ -14,12 +14,20 @@ Options:
   --out       output .glb file (single input) or folder (folder input)
   --tris      target triangle count            (default 3000)
   --size      longest dimension in meters      (default 2.0)
-  --voxel     voxel remesh size before decimating, 0 = off (default 0.02 of size).
-              Bigger = blobbier/chunkier, smaller = more detail. This also fixes the
-              holes and non-manifold junk AI meshes usually have.
+  --voxel     voxel remesh size before decimating, 0 = off (default 0.004 of size).
+              Bigger = blobbier/chunkier (0.02 of size already melts thin arms), smaller =
+              more detail. It also fixes the holes and non-manifold junk AI meshes usually
+              have; with 0 the decimator can stall far above --tris on those meshes.
   --color     base color hex                   (default 6B8E4E, jungle green)
   --belly     underside color hex, "" = off    (default C9B98A, sandy belly)
   --flat      flat shading (faceted). Default is smooth; the toon shader handles the look.
+  --min-island  drop disconnected pieces smaller than this fraction of the mesh's faces
+              (default 0.02), and flat pieces under 3% of the model's height whatever their
+              size. Removes background noise and floor shadows that the shape generator
+              turned into geometry. 0 = keep everything.
+  --yaw       degrees to turn the mesh about the up axis before sizing, so the output faces
+              the game's forward (-Z). Same sign as modelYawDegrees in assets.jsonc; find the
+              value with blender_turntable.py --asset <id> --yaw N. (default 0)
 """
 
 import argparse
@@ -29,7 +37,7 @@ import sys
 
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 
 def parse_args():
@@ -43,6 +51,8 @@ def parse_args():
     p.add_argument("--color", default="6B8E4E")
     p.add_argument("--belly", default="C9B98A")
     p.add_argument("--flat", action="store_true")
+    p.add_argument("--yaw", type=float, default=0.0)
+    p.add_argument("--min-island", type=float, default=0.02)
     return p.parse_args(argv)
 
 
@@ -92,6 +102,81 @@ def strip_materials(obj):
         obj.data.uv_layers.remove(uv)
 
 
+def drop_floaters(obj, min_fraction):
+    """Delete connected pieces with fewer than min_fraction of all faces, and flat
+    sheets (a floor shadow turned into geometry) whatever their size."""
+    if min_fraction <= 0:
+        return
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0005)
+
+    zs = [v.co.z for v in bm.verts]
+    flat_limit = 0.03 * (max(zs) - min(zs))
+
+    seen, islands = set(), []
+    for face in bm.faces:
+        if face in seen:
+            continue
+        seen.add(face)
+        stack, island = [face], []
+        while stack:
+            f = stack.pop()
+            island.append(f)
+            for e in f.edges:
+                for g in e.link_faces:
+                    if g not in seen:
+                        seen.add(g)
+                        stack.append(g)
+        islands.append(island)
+    limit = min_fraction * len(bm.faces)
+
+    def height(island):
+        z = [v.co.z for f in island for v in f.verts]
+        return max(z) - min(z)
+
+    doomed = [i for i in islands if len(i) < limit or height(i) < flat_limit]
+    drop = [f for island in doomed for f in island]
+    if drop:
+        bmesh.ops.delete(bm, geom=drop, context="FACES")
+        print(f"[cleanup] dropped {len(drop)} faces in {len(doomed)} floating or flat pieces")
+
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
+def cut_floor(obj, fraction=0.02):
+    """Slice off a thin slab at ground level and cap the cut.
+
+    A floor shadow in the reference image often becomes a thin sheet fused to the feet,
+    which the island pass can't separate. Run this on the clean, closed mesh the voxel
+    remesh produces: the level cut then leaves simple loops that cap reliably. It flattens
+    the soles very slightly."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    zs = [v.co.z for v in bm.verts]
+    top = min(zs) + fraction * (max(zs) - min(zs))
+    before = len(bm.faces)
+    cut = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-6,
+                                 plane_co=(0, 0, top), plane_no=(0, 0, 1), clear_inner=True)
+    if any(isinstance(g, bmesh.types.BMEdge) for g in cut["geom_cut"]):
+        bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary], sides=0)
+    open_edges = sum(1 for e in bm.edges if e.is_boundary)
+    bm.to_mesh(obj.data)
+    bm.free()
+    print(f"[cleanup] floor cut: {before} -> {len(obj.data.polygons)} faces, {open_edges} open edges left")
+
+
+def turn(obj, yaw_degrees):
+    # Godot yaw about +Y is a rotation about Blender +Z with the same sign.
+    # Transform the mesh data directly: glTF imports use quaternion rotation mode, so setting
+    # rotation_euler would be silently ignored.
+    if yaw_degrees:
+        obj.data.transform(Matrix.Rotation(math.radians(yaw_degrees), 4, "Z"))
+        obj.data.update()
+        bpy.context.view_layer.update()
+
+
 def normalize_size(obj, size):
     dims = obj.dimensions
     longest = max(dims.x, dims.y, dims.z)
@@ -110,21 +195,38 @@ def tri_count(obj):
     return sum(len(p.vertices) - 2 for p in obj.data.polygons)
 
 
-def remesh_and_decimate(obj, voxel, target_tris):
+def remesh_and_decimate(obj, voxel, target_tris, min_island=0.02):
     if voxel and voxel > 0:
         m = obj.modifiers.new("Remesh", "REMESH")
         m.mode = "VOXEL"
         m.voxel_size = voxel
         m.use_smooth_shade = False
         apply_modifier(obj, m)
+        if min_island > 0:
+            cut_floor(obj)
+        drop_floaters(obj, min_island)  # sheet remnants the cut left behind
+    else:
+        # Without a remesh, weld first: raw AI meshes often have unshared vertices, which
+        # stops the decimator from collapsing edges.
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0005)
+        bm.to_mesh(obj.data)
+        bm.free()
 
-    current = tri_count(obj)
-    if current > target_tris:
+    # One collapse pass can stall well above the target on non-manifold AI meshes; repeat
+    # until it gets close or stops making progress.
+    for _ in range(6):
+        current = tri_count(obj)
+        if current <= target_tris * 1.05:
+            break
         m = obj.modifiers.new("Decimate", "DECIMATE")
         m.decimate_type = "COLLAPSE"
         m.ratio = max(0.001, target_tris / current)
         m.use_collapse_triangulate = True
         apply_modifier(obj, m)
+        if tri_count(obj) > current * 0.95:
+            break
 
     # Merge stray verts and drop loose bits.
     bm = bmesh.new()
@@ -192,9 +294,11 @@ def process(src, dst, a):
     reset_scene()
     obj = import_and_join(src)
     strip_materials(obj)
+    drop_floaters(obj, a.min_island)
+    turn(obj, a.yaw)
     normalize_size(obj, a.size)
-    voxel = a.voxel if a.voxel is not None else a.size * 0.02
-    remesh_and_decimate(obj, voxel, a.tris)
+    voxel = a.voxel if a.voxel is not None else a.size * 0.004
+    remesh_and_decimate(obj, voxel, a.tris, a.min_island)
     ground_and_center(obj)
     set_shading(obj, a.flat)
     paint_vertex_colors(obj, a.color, a.belly)
