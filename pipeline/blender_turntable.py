@@ -3,10 +3,10 @@ Render a .glb from four sides into one 2x2 contact sheet, for reviewing generate
 
 Run headless (Blender 4.2+):
 
-  blender -b -P pipeline/blender_turntable.py -- --in work/raw-meshes/raptor_s1.glb
-          [--out work/turntables/raptor_s1.png] [--size 512] [--asset raptor]
+  blender -b -P pipeline/blender_turntable.py -- --in work/raw-meshes/velociraptor_s1.glb
+          [--out work/turntables/velociraptor_s1.png] [--size 512] [--asset velociraptor]
 
---out defaults to work/turntables/<input name>.png.
+--out defaults to <workDir>/turntables/<input name>.png (workDir from local.settings.jsonc).
 --asset applies that registry entry's modelYawDegrees and scale from game/data/assets.jsonc
 and draws its sockets as magenta balls, so the sheet shows the model as the game will.
 --yaw N overrides modelYawDegrees, to try a value before writing it to the registry.
@@ -33,6 +33,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from comfy_gen import load_jsonc  # noqa: E402  (stdlib-only helper shared with the ComfyUI driver)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def work_dir():
+    settings = os.path.join(REPO, "pipeline", "local.settings.jsonc")
+    work = load_jsonc(settings).get("workDir", "work") if os.path.exists(settings) else "work"
+    return os.path.abspath(os.path.join(REPO, work))
 
 
 def parse_args():
@@ -194,9 +200,8 @@ def contact_sheet(paths, out, size):
 def main():
     a = parse_args()
     src = os.path.abspath(a.inp)
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out = os.path.abspath(a.out) if a.out else os.path.join(
-        repo, "work", "turntables", os.path.splitext(os.path.basename(src))[0] + ".png")
+        work_dir(), "turntables", os.path.splitext(os.path.basename(src))[0] + ".png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
 
     meshes = import_mesh(src)

@@ -41,10 +41,14 @@ next to others of the same kind.
 - Optional `tint` only if it should differ from the kind's default.
 
 **`pipeline/manifest.jsonc`** (dino, weapon, rider and prop; skip projectiles, which have no model):
-- `describe`: a short visual description in the style of the others. It is the only
-  creative input to the image prompt, so keep it about shape and silhouette.
-- `colors.base` / `colors.belly` hex, `views`, `size` (meters, roughly the collider's
-  largest dimension), `tris` (dino 3000–4000, weapon ~800, prop ~1000).
+- `request`: the user's own description, as they wrote it (or the species name if they gave
+  none).
+- `bodyPlan` for dinos: `biped`, `quadruped` or `long_quadruped` (see the table in
+  `pipeline/prompts/style.md`).
+- `prompt`: leave it `""`. `/generate-model` writes it with the user at its first gate.
+- `colors.base` / `colors.belly` hex (placeholders; `/generate-model` samples the real ones),
+  `size` (meters, roughly the collider's largest dimension), `tris` (dino 3000–4000,
+  weapon ~800, prop ~1000).
 
 **`game/data/tuning.jsonc`**:
 - dino or rider → `movers.<id>`: `moveSpeed`, `turnRateDegrees`, `maxHealth`. Place it

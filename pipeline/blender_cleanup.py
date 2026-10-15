@@ -6,7 +6,7 @@ a small, clean, game-ready .glb with flat palette vertex colors (no textures).
 
 Run headless (Blender 4.x / 5.x):
 
-  blender -b -P blender_cleanup.py -- --in raw.glb --out dino_raptor.glb
+  blender -b -P blender_cleanup.py -- --in raw.glb --out velociraptor.glb
   blender -b -P blender_cleanup.py -- --in C:/ComfyUI/output/mesh --out C:/game/assets/raw_models
 
 Options:
@@ -27,7 +27,11 @@ Options:
               turned into geometry. 0 = keep everything.
   --yaw       degrees to turn the mesh about the up axis before sizing, so the output faces
               the game's forward (-Z). Same sign as modelYawDegrees in assets.jsonc; find the
-              value with blender_turntable.py --asset <id> --yaw N. (default 0)
+              value with blender_turntable.py --asset <id> --yaw N. "auto" (the default)
+              lines the mesh's long axis up with forward and picks the end nearest
+              --yaw-prior; it prints the yaw it chose.
+  --yaw-prior the yaw "auto" leans toward (default -135: single side-view meshes from
+              Hunyuan3D-2mv come out turned about that far).
 """
 
 import argparse
@@ -51,7 +55,8 @@ def parse_args():
     p.add_argument("--color", default="6B8E4E")
     p.add_argument("--belly", default="C9B98A")
     p.add_argument("--flat", action="store_true")
-    p.add_argument("--yaw", type=float, default=0.0)
+    p.add_argument("--yaw", default="auto")
+    p.add_argument("--yaw-prior", type=float, default=-135.0)
     p.add_argument("--min-island", type=float, default=0.02)
     return p.parse_args(argv)
 
@@ -110,6 +115,9 @@ def drop_floaters(obj, min_fraction):
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0005)
+    if not bm.verts:
+        bm.free()
+        raise RuntimeError("mesh is empty")
 
     zs = [v.co.z for v in bm.verts]
     flat_limit = 0.03 * (max(zs) - min(zs))
@@ -154,6 +162,9 @@ def cut_floor(obj, fraction=0.02):
     the soles very slightly."""
     bm = bmesh.new()
     bm.from_mesh(obj.data)
+    if not bm.verts:
+        bm.free()
+        raise RuntimeError("mesh is empty after the remesh; try a smaller --voxel")
     zs = [v.co.z for v in bm.verts]
     top = min(zs) + fraction * (max(zs) - min(zs))
     before = len(bm.faces)
@@ -165,6 +176,45 @@ def cut_floor(obj, fraction=0.02):
     bm.to_mesh(obj.data)
     bm.free()
     print(f"[cleanup] floor cut: {before} -> {len(obj.data.polygons)} faces, {open_edges} open edges left")
+
+
+def wrap180(deg):
+    return (deg + 180.0) % 360.0 - 180.0
+
+
+def auto_yaw(obj, prior):
+    """Yaw that turns the mesh's long ground-plane axis onto forward (Blender +Y, which the
+    glTF export makes -Z), choosing between the two ends by closeness to prior.
+
+    The long axis comes from the 2x2 covariance of the vertices' ground-plane positions.
+    Which end is the head can't be told from the shape alone, hence the prior. Vertices in
+    the bottom 15% are skipped: a floor-shadow sheet fused to the feet would hide the axis."""
+    if not obj.data.vertices:
+        raise RuntimeError("mesh is empty")
+    zs = [v.co.z for v in obj.data.vertices]
+    floor = min(zs) + 0.15 * (max(zs) - min(zs))
+    vs = [v for v in obj.data.vertices if v.co.z > floor]
+    n = len(vs)
+    if n == 0:
+        return prior
+    mx = sum(v.co.x for v in vs) / n
+    my = sum(v.co.y for v in vs) / n
+    sxx = sum((v.co.x - mx) ** 2 for v in vs) / n
+    syy = sum((v.co.y - my) ** 2 for v in vs) / n
+    sxy = sum((v.co.x - mx) * (v.co.y - my) for v in vs) / n
+    axis = math.degrees(0.5 * math.atan2(2 * sxy, sxx - syy))  # long axis angle from +X
+    spread = math.sqrt((sxx - syy) ** 2 + 4 * sxy ** 2)
+    elongation = (sxx + syy + spread) / max(1e-12, sxx + syy - spread)
+    if elongation < 1.5:
+        print(f"[cleanup] auto yaw: no clear long axis (elongation {elongation:.2f}); using the prior {prior:g}")
+        return prior
+    candidates = [wrap180(90.0 - axis), wrap180(-90.0 - axis)]
+    yaw = min(candidates, key=lambda c: abs(wrap180(c - prior)))
+    margin = abs(abs(wrap180(candidates[0] - prior)) - abs(wrap180(candidates[1] - prior)))
+    note = "  (ends nearly tied: check the turntable)" if margin < 30 else ""
+    print(f"[cleanup] auto yaw: {yaw:.0f} (long axis {axis:.0f} deg, candidates "
+          f"{candidates[0]:.0f}/{candidates[1]:.0f}, prior {prior:g}){note}")
+    return yaw
 
 
 def turn(obj, yaw_degrees):
@@ -295,7 +345,7 @@ def process(src, dst, a):
     obj = import_and_join(src)
     strip_materials(obj)
     drop_floaters(obj, a.min_island)
-    turn(obj, a.yaw)
+    turn(obj, auto_yaw(obj, a.yaw_prior) if a.yaw == "auto" else float(a.yaw))
     normalize_size(obj, a.size)
     voxel = a.voxel if a.voxel is not None else a.size * 0.004
     remesh_and_decimate(obj, voxel, a.tris, a.min_island)

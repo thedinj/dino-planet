@@ -1,16 +1,26 @@
 """
-Drive ComfyUI's HTTP API for the asset pipeline. Python 3.10+, standard library only.
+Drive ComfyUI's HTTP API for the asset pipeline. Python 3.10+; refs and non-square shape
+inputs also need Pillow (for the review sheet and padding, via image_tools.py).
 
   python pipeline/comfy_gen.py check
-  python pipeline/comfy_gen.py refs  <id> [--view left] [--seed N] [--batch 4] [--steps 30]
-  python pipeline/comfy_gen.py shape <id> --left work/refs/<id>/left_s123_1.png
+  python pipeline/comfy_gen.py refs  <id> [--prompts work/refs/<id>/prompts.json]
+                                     [--ref <image>] [--batch 1] [--seed N]
+  python pipeline/comfy_gen.py edit  <id> --image <png> [--image2 <png>] --prompt "..." --name N
+  python pipeline/comfy_gen.py shape <id> --left work/refs/<id>/<name>_1.png
                                      [--front F] [--back B] [--right R]
                                      [--seed N] [--turbo] [--octree 256] [--steps N] [--cfg X]
 
-refs   builds the prompt from pipeline/prompts/style.md + the asset's manifest "describe",
-       runs workflows/reference_sdxl.json and saves work/refs/<id>/<view>_s<seed>_<n>.png.
-shape  uploads the chosen views, runs workflows/shape_hunyuan3d_mv.json and saves
-       work/raw-meshes/<id>_s<seed>.glb. Views you don't pass are left out of the graph.
+refs   builds each prompt from pipeline/prompts/style.md around a subject: the asset's
+       manifest "prompt", or each {"name", "prompt"} in a --prompts JSON list. Plain prompts
+       run workflows/reference_qwen.json (Qwen-Image) on the canvas of the asset's bodyPlan.
+       With --ref (a photo, sketch, art or an earlier image to redraw) it runs
+       workflows/edit_qwen.json (Qwen-Image-Edit) instead. Saves
+       work/refs/<id>/<name>_<n>.png, the full prompt as <name>.txt, and sheet.png.
+edit   runs a free-form Qwen-Image-Edit instruction on one image (add a feature, show
+       another view) and saves work/refs/<id>/<name>.png at the input's size.
+shape  uploads the chosen views (padding non-square ones to a square), runs
+       workflows/shape_hunyuan3d_mv.json and saves work/raw-meshes/<id>_s<seed>.glb.
+       Views you don't pass are left out of the graph.
 
 The ComfyUI URL comes from pipeline/local.settings.jsonc ("comfyUiUrl"). Workflow nodes are
 found by their _meta.title, so a re-exported workflow keeps working if the titles are kept.
@@ -21,6 +31,7 @@ import argparse
 import json
 import random
 import re
+import struct
 import sys
 import time
 import uuid
@@ -72,6 +83,13 @@ def work_dir(cfg):
     return (REPO / cfg.get("workDir", "work")).resolve()
 
 
+def rel(path):
+    try:
+        return Path(path).relative_to(REPO)
+    except ValueError:
+        return path
+
+
 def manifest_entry(asset_id):
     for a in load_jsonc(PIPELINE / "manifest.jsonc")["assets"]:
         if a["id"] == asset_id:
@@ -80,30 +98,56 @@ def manifest_entry(asset_id):
 
 
 def style_template():
-    """Positive and negative prompt text and the view phrases, from prompts/style.md."""
+    """The prompt blocks and the body-plan canvas table from prompts/style.md."""
     md = (PIPELINE / "prompts" / "style.md").read_text(encoding="utf-8")
 
     def block(heading):
-        m = re.search(rf"## {heading}\s*\n.*?```\s*\n(.*?)```", md, re.S)
+        m = re.search(rf"^## {heading}\s*\n.*?```\s*\n(.*?)```", md, re.S | re.M)
         if not m:
             sys.exit(f"prompts/style.md has no code block under '## {heading}'.")
         return " ".join(m.group(1).split())
 
-    views = dict(re.findall(r"^\|\s*(\w+)\s*\|\s*`([^`]+)`\s*\|", md, re.M))
-    return block("Positive"), block("Negative"), views
+    blocks = {h: block(h) for h in ("Style", "Pose", "View", "From reference")}
+    canvas = {plan: (int(w), int(h)) for plan, w, h in
+              re.findall(r"^\|\s*(\w+)\s*\|\s*`(\d+)x(\d+)`\s*\|", md, re.M)}
+    return blocks, canvas
 
 
-def build_prompts(entry, view):
-    positive, negative, views = style_template()
-    if view not in views:
-        sys.exit(f"Unknown view '{view}'. style.md defines: {', '.join(views)}.")
-    positive = positive.replace("{describe}", entry["describe"]).replace("{view}", views[view])
-    if entry["kind"] != "dino":
-        # Per style.md: weapons and props drop the creature-only negatives.
-        for term in ("rider", "person", "cut off tail"):
-            negative = re.sub(rf"(^|,\s*){re.escape(term)}(?=,|$)", "", negative)
-        negative = negative.strip(" ,")
-    return positive, negative
+def build_prompt(subject, with_ref):
+    blocks, _ = style_template()
+    parts = [blocks["From reference"]] if with_ref else []
+    parts += [" ".join(subject.split()), blocks["Pose"], blocks["View"], blocks["Style"]]
+    return " ".join(parts)
+
+
+def canvas_for(entry):
+    _, canvas = style_template()
+    plan = entry.get("bodyPlan")
+    if plan not in canvas:
+        sys.exit(f"'{entry['id']}' needs a bodyPlan in manifest.jsonc, one of: {', '.join(canvas)}.")
+    return canvas[plan]
+
+
+def png_size(path):
+    with open(path, "rb") as f:
+        head = f.read(24)
+    if head[:8] != b"\x89PNG\r\n\x1a\n":
+        sys.exit(f"{path} is not a PNG.")
+    return struct.unpack(">II", head[16:24])
+
+
+def to_png(path, out_dir):
+    """Uploads go in as PNG; convert anything else (a phone photo, a .jpg) with Pillow."""
+    path = Path(path)
+    if not path.exists():
+        sys.exit(f"No such image: {path}")
+    if path.suffix.lower() == ".png":
+        return path
+    from PIL import Image
+    dest = out_dir / f"{path.stem}.png"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    Image.open(path).convert("RGB").save(dest)
+    return dest
 
 
 # ---------------------------------------------------------------- ComfyUI API
@@ -145,7 +189,7 @@ class Comfy:
                                    {"Content-Type": f"multipart/form-data; boundary={boundary}"}))
         return f"{res['subfolder']}/{res['name']}" if res.get("subfolder") else res["name"]
 
-    def run(self, workflow, label):
+    def run(self, workflow, label, timeout_min=20):
         """Queue a workflow, wait for it, return its history entry."""
         res = self.post("/prompt", {"prompt": workflow, "client_id": self.client_id})
         prompt_id = res["prompt_id"]
@@ -153,6 +197,8 @@ class Comfy:
         start = time.time()
         while True:
             time.sleep(2)
+            if time.time() - start > timeout_min * 60:
+                sys.exit(f"{label}: no result after {timeout_min} min. Check ComfyUI's console.")
             hist = self.get(f"/history/{prompt_id}")
             if prompt_id in hist:
                 entry = hist[prompt_id]
@@ -179,7 +225,11 @@ class Comfy:
                                     "type": item.get("type", "output")})
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(self._req(f"/view?{q}", timeout=300))
-        print(f"wrote {dest.relative_to(REPO)}", flush=True)
+        print(f"wrote {rel(dest)}", flush=True)
+
+    def free(self):
+        """Unload ComfyUI's models. The Qwen models and Hunyuan3D don't fit in 8 GB together."""
+        self.post("/free", {"unload_models": True, "free_memory": True})
 
 
 def load_workflow(name):
@@ -193,60 +243,139 @@ def node(workflow, title):
     sys.exit(f"Workflow has no node titled '{title}'.")
 
 
+def pngs(comfy, entry):
+    return [i for i in comfy.outputs(entry) if i["filename"].lower().endswith(".png")]
+
+
 # ---------------------------------------------------------------- commands
+
+# Model-loader node titles, the input naming the file, and the ComfyUI folder it lives in.
+MODEL_NODES = {"unet": ("unet_name", "diffusion_models"), "clip": ("clip_name", "text_encoders"),
+               "vae": ("vae_name", "vae"), "lora": ("lora_name", "loras"),
+               "checkpoint": ("ckpt_name", "checkpoints")}
+WORKFLOWS = ("reference_qwen.json", "edit_qwen.json", "shape_hunyuan3d_mv.json")
+
 
 def cmd_check(comfy, _args):
     stats = comfy.get("/system_stats")
     print(f"ComfyUI {stats['system']['comfyui_version']} at {comfy.url}")
     for d in stats.get("devices", []):
         print(f"  {d['name']}: {d['vram_total'] // 2**20} MB VRAM, {d['vram_free'] // 2**20} MB free")
-    ckpts = set(comfy.get("/models/checkpoints"))
     nodes = set(comfy.get("/object_info"))
+    folders = {}
     ok = True
-    for wf in ("reference_sdxl.json", "shape_hunyuan3d_mv.json"):
-        workflow = load_workflow(wf)
-        for n in workflow.values():
+    for wf in WORKFLOWS:
+        for n in load_workflow(wf).values():
             if n["class_type"] not in nodes:
                 print(f"  MISSING node {n['class_type']} (used by {wf})")
                 ok = False
-        need = node(workflow, "checkpoint")[1]["inputs"]["ckpt_name"]
-        if need not in ckpts:
-            print(f"  MISSING checkpoint {need} (used by {wf})")
-            ok = False
-    if "hunyuan3d-dit-v2-mv-turbo.safetensors" not in ckpts:
+            model = MODEL_NODES.get(n.get("_meta", {}).get("title"))
+            if model:
+                field, folder = model
+                if folder not in folders:
+                    folders[folder] = set(comfy.get(f"/models/{folder}"))
+                if n["inputs"][field] not in folders[folder]:
+                    print(f"  MISSING {folder}/{n['inputs'][field]} (used by {wf})")
+                    ok = False
+    if "hunyuan3d-dit-v2-mv-turbo.safetensors" not in folders.get("checkpoints", set()):
         print("  note: turbo checkpoint not installed; --turbo won't work")
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        print("  MISSING Pillow for this Python (pip install pillow)")
+        ok = False
     print("ready" if ok else "not ready")
     sys.exit(0 if ok else 1)
 
 
+def set_edit_images(comfy, wf, image1, image2, asset_id):
+    """Upload image1, and image2 or drop its nodes, into an edit_qwen.json graph."""
+    node(wf, "image1")[1]["inputs"]["image"] = comfy.upload(image1, f"{asset_id}_image1.png")
+    if image2:
+        node(wf, "image2")[1]["inputs"]["image"] = comfy.upload(image2, f"{asset_id}_image2.png")
+    else:
+        for title in ("image2", "scale2"):
+            del wf[node(wf, title)[0]]
+        for title in ("positive", "negative"):
+            node(wf, title)[1]["inputs"].pop("image2")
+
+
 def cmd_refs(comfy, args):
     entry = manifest_entry(args.id)
-    positive, negative = build_prompts(entry, args.view)
-    seed = args.seed if args.seed is not None else random.randrange(2**32)
-
-    wf = load_workflow("reference_sdxl.json")
-    node(wf, "positive")[1]["inputs"]["text"] = positive
-    node(wf, "negative")[1]["inputs"]["text"] = negative
-    node(wf, "latent")[1]["inputs"]["batch_size"] = args.batch
-    sampler = node(wf, "sampler")[1]["inputs"]
-    sampler["seed"] = seed
-    if args.steps:
-        sampler["steps"] = args.steps
-    node(wf, "save")[1]["inputs"]["filename_prefix"] = f"dinoplanet/{args.id}_{args.view}"
-
-    print(f"positive: {positive}\nnegative: {negative}\nseed: {seed}")
-    entry_out = comfy.run(wf, f"{args.id} {args.view} refs")
+    if entry["kind"] != "dino":
+        sys.exit(f"refs only has a dino template so far; '{args.id}' is a {entry['kind']}.")
     out_dir = work_dir(settings()) / "refs" / args.id
-    images = [i for i in comfy.outputs(entry_out) if i["filename"].lower().endswith(".png")]
-    for n, item in enumerate(images, 1):
-        comfy.download(item, out_dir / f"{args.view}_s{seed}_{n}.png")
+    if args.prompts:
+        variants = json.loads((REPO / args.prompts).read_text(encoding="utf-8"))
+    elif entry.get("prompt"):
+        variants = [{"name": "manifest", "prompt": entry["prompt"]}]
+    else:
+        sys.exit(f"'{args.id}' has no manifest prompt yet; write one or pass --prompts.")
+    ref = to_png(REPO / args.ref, out_dir / "inputs") if args.ref else None
+    width, height = canvas_for(entry)
+    seed = args.seed if args.seed is not None else random.randrange(2**32)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    comfy.free()
+    written = []
+    for v in variants:
+        prompt = build_prompt(v["prompt"], ref is not None)
+        if ref:
+            wf = load_workflow("edit_qwen.json")
+            set_edit_images(comfy, wf, ref, None, args.id)
+            node(wf, "positive")[1]["inputs"]["prompt"] = prompt
+        else:
+            wf = load_workflow("reference_qwen.json")
+            node(wf, "positive")[1]["inputs"]["text"] = prompt
+        node(wf, "latent")[1]["inputs"].update(width=width, height=height, batch_size=args.batch)
+        node(wf, "sampler")[1]["inputs"]["seed"] = seed
+        name = v["name"] + ("_ref" if ref else "")
+        node(wf, "save")[1]["inputs"]["filename_prefix"] = f"dinoplanet/{args.id}_{name}"
+
+        print(f"[{name}] {prompt}")
+        # Number on from earlier runs of the same variant, so nothing is overwritten.
+        n = max((int(m.group(1)) for f in out_dir.glob(f"{name}_*.png")
+                 if (m := re.fullmatch(rf"{re.escape(name)}_(\d+)\.png", f.name))), default=0)
+        for item in pngs(comfy, comfy.run(wf, f"{args.id} {name}")):
+            n += 1
+            dest = out_dir / f"{name}_{n}.png"
+            comfy.download(item, dest)
+            written.append(dest)
+        (out_dir / f"{name}.txt").write_text(prompt + "\n", encoding="utf-8")
+
+    if written:
+        from image_tools import sheet
+        print(f"sheet {rel(sheet(out_dir / 'sheet.png', written))}")
+
+
+def cmd_edit(comfy, args):
+    manifest_entry(args.id)  # fail early on a typo'd id
+    out_dir = work_dir(settings()) / "refs" / args.id
+    image1 = to_png(REPO / args.image, out_dir / "inputs")
+    image2 = to_png(REPO / args.image2, out_dir / "inputs") if args.image2 else None
+    width, height = png_size(image1)
+
+    wf = load_workflow("edit_qwen.json")
+    set_edit_images(comfy, wf, image1, image2, args.id)
+    node(wf, "positive")[1]["inputs"]["prompt"] = args.prompt
+    # Same size as the input, rounded down to the latent grid.
+    node(wf, "latent")[1]["inputs"].update(width=width // 16 * 16, height=height // 16 * 16, batch_size=1)
+    node(wf, "sampler")[1]["inputs"]["seed"] = args.seed if args.seed is not None else random.randrange(2**32)
+    node(wf, "save")[1]["inputs"]["filename_prefix"] = f"dinoplanet/{args.id}_{args.name}"
+
+    comfy.free()
+    images = pngs(comfy, comfy.run(wf, f"{args.id} edit {args.name}"))
+    if not images:
+        sys.exit("ComfyUI finished but returned no image.")
+    comfy.download(images[0], out_dir / f"{args.name}.png")
+    (out_dir / f"{args.name}.txt").write_text(args.prompt + "\n", encoding="utf-8")
 
 
 def cmd_shape(comfy, args):
     manifest_entry(args.id)  # fail early on a typo'd id
     views = {v: getattr(args, v) for v in VIEWS if getattr(args, v)}
     if not views:
-        sys.exit("Pass at least one view image, e.g. --left work/refs/<id>/left_s1_1.png")
+        sys.exit("Pass at least one view image, e.g. --left work/refs/<id>/manifest_1.png")
     seed = args.seed if args.seed is not None else random.randrange(2**32)
 
     wf = load_workflow("shape_hunyuan3d_mv.json")
@@ -255,7 +384,12 @@ def cmd_shape(comfy, args):
         img_id, img = node(wf, f"image_{v}")
         enc_id, _ = node(wf, f"encode_{v}")
         if v in views:
-            img["inputs"]["image"] = comfy.upload(REPO / views[v], f"{args.id}_{v}.png")
+            path = REPO / views[v]
+            w, h = png_size(path)
+            if w != h:  # the shape model crops to a square; pad so the tail and neck survive
+                from image_tools import pad
+                path = pad(path, work_dir(settings()) / "refs" / args.id / "padded" / f"{path.stem}_{v}.png")
+            img["inputs"]["image"] = comfy.upload(path, f"{args.id}_{v}.png")
         else:
             del wf[img_id], wf[enc_id]
             cond["inputs"].pop(v, None)
@@ -272,8 +406,7 @@ def cmd_shape(comfy, args):
     node(wf, "decode")[1]["inputs"]["octree_resolution"] = args.octree
     node(wf, "save")[1]["inputs"]["filename_prefix"] = f"dinoplanet/{args.id}"
 
-    # SDXL and Hunyuan3D don't both fit in 8 GB; drop whatever is loaded first.
-    comfy.post("/free", {"unload_models": True, "free_memory": True})
+    comfy.free()
     print(f"views: {', '.join(views)}  seed: {seed}  octree: {args.octree}")
     entry_out = comfy.run(wf, f"{args.id} shape")
     meshes = [i for i in comfy.outputs(entry_out) if i["filename"].lower().endswith(".glb")]
@@ -289,12 +422,20 @@ def main():
 
     sub.add_parser("check", help="verify ComfyUI is up and has the models and nodes")
 
-    r = sub.add_parser("refs", help="generate reference images for one view")
+    r = sub.add_parser("refs", help="generate side-view reference images")
     r.add_argument("id")
-    r.add_argument("--view", default="left")
+    r.add_argument("--prompts", help="JSON list of {name, prompt} subject variants, relative to the repo root")
+    r.add_argument("--ref", help="image to redraw (photo, sketch, art), relative to the repo root")
+    r.add_argument("--batch", type=int, default=1)
     r.add_argument("--seed", type=int)
-    r.add_argument("--batch", type=int, default=4)
-    r.add_argument("--steps", type=int)
+
+    e = sub.add_parser("edit", help="run a free-form edit instruction on one image")
+    e.add_argument("id")
+    e.add_argument("--image", required=True, help="relative to the repo root")
+    e.add_argument("--image2", help="optional second image the instruction can refer to")
+    e.add_argument("--prompt", required=True)
+    e.add_argument("--name", required=True, help="output name: work/refs/<id>/<name>.png")
+    e.add_argument("--seed", type=int)
 
     s = sub.add_parser("shape", help="generate a raw mesh from chosen reference views")
     s.add_argument("id")
@@ -308,7 +449,7 @@ def main():
 
     args = p.parse_args()
     comfy = Comfy(args.url or settings().get("comfyUiUrl", "http://127.0.0.1:8000"))
-    {"check": cmd_check, "refs": cmd_refs, "shape": cmd_shape}[args.cmd](comfy, args)
+    {"check": cmd_check, "refs": cmd_refs, "edit": cmd_edit, "shape": cmd_shape}[args.cmd](comfy, args)
 
 
 if __name__ == "__main__":

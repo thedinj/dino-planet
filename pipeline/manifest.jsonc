@@ -1,32 +1,39 @@
 // What the pipeline should generate. One entry per asset; ids match game/data/assets.jsonc.
-// Not wired to a script yet: this is the input format for the batch generator to come.
-// "describe" is the only creative part; the style template in prompts/style.md wraps it.
+// "request"  the owner's plain description, kept as written.
+// "prompt"   the detailed subject Claude wrote from it (rules in prompts/style.md), approved
+//            at /generate-model's first gate. style.md wraps it with pose, view and style.
+// "bodyPlan" biped | quadruped | long_quadruped; picks the image canvas (and later the rig).
+// "reference" optional image under work/inputs/<id>/ to redraw (gitignored, never committed).
+// "colors"   sampled from the picked reference image by image_tools.py colors.
 {
   "assets": [
     {
       "id": "velociraptor",
       "kind": "dino",
-      "describe": "lean velociraptor, long stiff tail, small arms, alert head, small boxy cannon pod strapped to its back",
+      "request": "velociraptor",
+      "bodyPlan": "biped",
+      "prompt": "A fierce bare velociraptor with lightweight, birdlike proportions: the head is small, about as long as the thigh, low and narrow like a wedge, with a slender upturned snout; long arms folded with three-fingered clawed hands; a lean body balanced over long slim legs; a stiff rod-like tail as long as the body; olive green with a tan belly.",
       "colors": { "base": "#6B8E4E", "belly": "#C9B98A" },
-      "views": ["left", "front", "back"],
       "size": 2.0,
       "tris": 3000
     },
     {
       "id": "trex",
       "kind": "dino",
-      "describe": "massive tyrannosaurus, huge head, thick legs, tiny arms",
+      "request": "massive tyrannosaurus, huge head, thick legs, tiny arms",
+      "bodyPlan": "biped",
+      "prompt": "A fierce bare tyrannosaurus with massive, heavy proportions: the head is huge, as long as the thigh is tall, deep and boxy with a broad jaw lined with teeth; a short thick neck; tiny two-fingered arms no longer than the head is deep; a deep, heavy body balanced over two thick pillar-like legs with three-toed feet; a thick tail that tapers over the length of the body; brown with a pale sandy belly.",
       "colors": { "base": "#9C7A55", "belly": "#D9C49A" },
-      "views": ["left", "front", "back"],
       "size": 5.0,
       "tris": 4000
     },
     {
+      // Gear gets its own prompt template later; refs refuses non-dino kinds until then.
       "id": "laser_cannon",
       "kind": "weapon",
-      "describe": "chunky sci-fi laser cannon turret, single barrel, round base mount",
+      "request": "chunky sci-fi laser cannon turret, single barrel, round base mount",
+      "prompt": "",
       "colors": { "base": "#8C8F99", "belly": "" },
-      "views": ["left"],
       "size": 0.8,
       "tris": 800
     }

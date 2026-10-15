@@ -77,7 +77,10 @@ changes under `src/`, `tests/` or `game/data/`, and sends failures back to Claud
 
 See `pipeline/README.md`. Generated models go in `game/models/` as `.glb`, cleaned by
 `pipeline/blender_cleanup.py`. `pipeline/comfy_gen.py` drives ComfyUI (workflows in
-`pipeline/workflows/`), and `pipeline/blender_turntable.py` renders review sheets of a mesh. Until a model exists, `Placeholders` draws a stand-in sized from
+`pipeline/workflows/`, prompt template in `pipeline/prompts/style.md`), `pipeline/image_tools.py`
+samples colors and makes review sheets, and `pipeline/blender_turntable.py` renders review
+sheets of a mesh. Users' reference photos and sketches go in `work/inputs/<id>/` and are never
+committed. Until a model exists, `Placeholders` draws a stand-in sized from
 the asset's collider. Press F3 in-game to see socket markers.
 
 **Keep big files out of git.** ComfyUI and its AI models live outside the repo. Reference images,

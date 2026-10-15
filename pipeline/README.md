@@ -12,22 +12,28 @@ Where things live:
 
 Goal: one dino from prompt to a Tunic-style model in Godot.
 
-**Scripted version:** with ComfyUI Desktop running, `/generate-model <id>` in Claude Code runs
-the steps below for an asset already registered with `/new-asset`, and stops for your
-approval after the reference image, the raw mesh, the cleanup and the in-game fit. The
-pieces it uses (also runnable by hand):
+**Scripted version (the normal way):** with ComfyUI Desktop running,
+`/generate-model <id> [plain description] [--ref=<photo or sketch>]` in Claude Code runs the
+steps below for an asset already registered with `/new-asset`. Claude turns your plain
+description into a detailed prompt, and you approve the prompts, the reference image, the
+raw mesh, the cleanup and the in-game fit. The pieces it uses (also runnable by hand):
 
-- `python pipeline/comfy_gen.py check | refs <id> | shape <id> --left <png>`: drives
-  ComfyUI's API with the workflows in `workflows/`.
+- `python pipeline/comfy_gen.py check | refs <id> | edit <id> | shape <id>`: drives
+  ComfyUI's API with the workflows in `workflows/`. Prompts are built from
+  `prompts/style.md` around the manifest's `prompt`.
+- `python pipeline/image_tools.py colors | sheet | pad`: samples model colors from an image,
+  makes review sheets, pads wide images to a square. Needs Pillow (`pip install pillow`).
 - `pipeline/blender_turntable.py`: renders a 2x2 review sheet of a `.glb`; `--asset <id>`
   shows it posed as in the game, with sockets.
-- `pipeline/blender_cleanup.py --yaw N`: turns the mesh to face the game's forward before sizing.
+- `pipeline/blender_cleanup.py`: turns (automatically by default), sizes, remeshes,
+  decimates and colors the raw mesh.
 
 The manual steps follow.
 
 ```
-SDXL reference image  ->  Hunyuan3D-2mv shape (.glb)  ->  blender_cleanup.py  ->  Godot + toon shader
-     (ComfyUI)                 (ComfyUI)                      (Blender)              (your project)
+Qwen-Image reference  ->  Hunyuan3D-2mv shape (.glb)  ->  blender_cleanup.py  ->  Godot + toon shader
+  (ComfyUI; or Qwen-Image-Edit          (ComfyUI)              (Blender)              (your project)
+   from your photo or sketch)
 ```
 
 Pieces involved:
@@ -63,46 +69,46 @@ Everything below says `ComfyUI/` for that path.
 
 ## 2. Download the models
 
-Put each file in `Comfy-Desktop\ComfyUI-Shared\models\checkpoints` and rename as shown.
+About 53 GB in all. Put each file in the ComfyUI `models\` subfolder shown. The names must
+match exactly; `python pipeline/comfy_gen.py check` reports anything missing.
 
-| Model                            | Download                                                                                                | Rename to                               | Size    |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------- |
-| Hunyuan3D-2mv (multi-view shape) | https://huggingface.co/tencent/Hunyuan3D-2mv/blob/main/hunyuan3d-dit-v2-mv/model.fp16.safetensors       | `hunyuan3d-dit-v2-mv.safetensors`       | ~2.5 GB |
-| _(optional)_ Hunyuan3D-2mv Turbo | https://huggingface.co/tencent/Hunyuan3D-2mv/blob/main/hunyuan3d-dit-v2-mv-turbo/model.fp16.safetensors | `hunyuan3d-dit-v2-mv-turbo.safetensors` | ~2.5 GB |
-| SDXL base (reference images)     | Easiest: open the **SDXL** template in Template Library and let it download                             | —                                       | ~7 GB   |
+| Model | Folder | File | Size |
+|---|---|---|---|
+| Qwen-Image (reference images) | `diffusion_models` | [`qwen_image_fp8_e4m3fn.safetensors`](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/diffusion_models) | 20 GB |
+| Qwen-Image-Edit-2509 (redraw a photo or sketch, fix-ups, extra views) | `diffusion_models` | [`qwen_image_edit_2509_fp8_e4m3fn.safetensors`](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files/diffusion_models) | 20 GB |
+| Qwen text encoder (both) | `text_encoders` | [`qwen_2.5_vl_7b_fp8_scaled.safetensors`](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/text_encoders) | 9 GB |
+| Qwen VAE (both) | `vae` | [`qwen_image_vae.safetensors`](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/vae) | 0.3 GB |
+| Lightning 4-step LoRA | `loras` | [`Qwen-Image-Lightning-4steps-V1.0.safetensors`](https://huggingface.co/lightx2v/Qwen-Image-Lightning/tree/main) | 1.7 GB |
+| Lightning 4-step LoRA for Edit | `loras` | [`Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors`](https://huggingface.co/lightx2v/Qwen-Image-Lightning/tree/main/Qwen-Image-Edit-2509) | 0.8 GB |
+| Hunyuan3D-2mv (multi-view shape) | `checkpoints` | [`model.fp16.safetensors`](https://huggingface.co/tencent/Hunyuan3D-2mv/blob/main/hunyuan3d-dit-v2-mv/model.fp16.safetensors), renamed to `hunyuan3d-dit-v2-mv.safetensors` | 2.5 GB |
+| _(optional)_ Hunyuan3D-2mv Turbo | `checkpoints` | [`model.fp16.safetensors`](https://huggingface.co/tencent/Hunyuan3D-2mv/blob/main/hunyuan3d-dit-v2-mv-turbo/model.fp16.safetensors), renamed to `hunyuan3d-dit-v2-mv-turbo.safetensors` | 2.5 GB |
 
-Restart ComfyUI (or press R to refresh model lists) after downloading.
+This runs on an 8 GB card with 32 GB of RAM: ComfyUI keeps the Qwen weights in RAM and
+streams them to the GPU. Restart ComfyUI (or press R to refresh model lists) after
+downloading.
 
-## 3. Make the reference images (SDXL)
+## 3. Make the reference image (Qwen-Image)
 
-Open **Template Library -> SDXL** (or "SDXL Simple"). Size **1024 x 1024**.
+The prompt is `prompts/style.md`'s blocks around a detailed description of the creature.
+Read its **Writing the subject** rules before writing one by hand: short prompts all turn
+into a T-rex. Settings: 4 steps, cfg 1, euler / simple, shift 3.1, with the Lightning LoRA
+(`workflows/reference_qwen.json` has them). Canvas 1024 x 1024, or 1472 x 832 for long,
+low animals (sauropods), padded to a square with white before the shape step.
 
-**Positive prompt — front view** (swap the bold part per asset):
-
-```
-game asset, single **velociraptor with a small cannon pod strapped to its back**,
-full body, side view facing left, standing pose, simple chunky stylized shapes,
-low poly toy figure, smooth matte plastic, solid flat colors, no texture detail,
-plain pure white background, soft even studio lighting, no shadows, centered, whole body in frame
-```
-
-**Negative prompt:**
-
-```
-background scenery, ground, grass, shadow, text, watermark, multiple creatures, cropped,
-cut off tail, realistic skin, scales detail, fur, photo, motion blur, rider, person
-```
+To start from a photo, toy, sketch or piece of art instead, use the Qwen-Image-Edit
+workflow (`workflows/edit_qwen.json`) with the image as image 1 and style.md's
+**From reference** prefix in front of the prompt. It keeps the image's shape and pose, so
+pick one standing with its feet down and its mouth closed.
 
 Tips:
 
-- Generate the **side view** first; it shows legs and tail best. Make a batch of 4 and pick one.
-- For the other views, keep the same seed and change only `side view facing left` to
-  `front view` / `back view` / `side view facing right`. They won't match perfectly; that's fine.
-  A single good side view alone also works.
-- Leave riders and big gear off the body. Those become separate attachment models later.
+- One side view facing left is enough. Seeds barely change Qwen's output; reword instead.
+- Leave riders and gear off the body. Those become separate attachment models.
+- A small feature that won't appear (a raptor's raised toe claw) can be added afterwards
+  with an edit: "...carries one very large, dark, hooked claw. Change nothing else."
 
-Save the picks to `work\refs\` (e.g. `raptor_left.png`), and copy the one you're
-using into `ComfyUI/input/` so the 3D workflow can load it.
+Save the pick to `work\refs\<id>\` and copy it into `ComfyUI/input/` so the 3D workflow
+can load it.
 
 ## 4. Generate the shape (Hunyuan3D-2mv)
 
@@ -117,7 +123,7 @@ using into `ComfyUI/input/` so the 3D workflow can load it.
 **If it runs out of memory (8 GB):**
 
 - In the VAE decode node, lower **octree_resolution** (try 256). You'll decimate later anyway.
-- Make sure the SDXL workflow tab isn't holding memory: click **Unload models**
+- Make sure the Qwen workflow isn't holding memory: click **Unload models**
   (in the queue/menu) before running the 3D workflow.
 - Last resort: switch ComfyUI to lowvram (step 1.4).
 
@@ -128,23 +134,27 @@ Install Blender 4.2 or newer (blender.org) and put its path in `pipeline\local.s
 
 ```powershell
 pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline\blender_cleanup.py -- `
-  --in work\raw-meshes\raptor.glb `
-  --out game\models\raptor.glb `
-  --tris 3000 --size 2.0 --color 6B8E4E --belly C9B98A
+  --in work\raw-meshes\velociraptor.glb `
+  --out game\models\velociraptor.glb `
+  --tris 3000 --size 2.0 --color 6B8E4E --belly C9B98A --flat
 ```
 
 Knobs worth playing with:
 
 - `--voxel` — chunkiness, in meters. Default is 0.4% of `--size` (0.008 for a 2 m dino), which keeps arms and facets; `0.04`+ is blobby and melts thin parts; `0` = off (decimation may stall).
 - `--tris` — 1500–4000 is a good range for a Tunic-scale creature.
-- `--flat` — faceted low-poly look instead of smooth.
+- `--flat` — faceted low-poly look instead of smooth (the game's dino look).
+- `--yaw` — `auto` (default) turns the mesh's long axis to face forward and prints the yaw
+  it chose; if the head ends up backwards, rerun with that number + 180.
+- `python pipeline/image_tools.py colors <png>` suggests `--color` and `--belly` from the
+  reference image.
 - Point `--in` at the whole `raw-meshes` folder and `--out` at `game\models` to batch everything.
 
 ## 6. See it in the game
 
 No Godot scene work needed: the game builds every asset from its registry entry.
 
-1. Save the cleaned model as `game/models/<id>.glb` (e.g. `raptor.glb`).
+1. Save the cleaned model as `game/models/<id>.glb` (e.g. `velociraptor.glb`).
 2. Check `game/data/assets.jsonc` has an entry with that `model` path. New asset? Add one;
    copy an existing entry of the same `kind`.
 3. Let Godot import it: open the editor once, or run `godot --headless --path game --import`.
