@@ -3,8 +3,8 @@ Render a .glb from four sides into one 2x2 contact sheet, for reviewing generate
 
 Run headless (Blender 4.2+):
 
-  blender -b -P pipeline/blender_turntable.py -- --in work/raw-meshes/velociraptor_s1.glb
-          [--out work/turntables/velociraptor_s1.png] [--size 512] [--asset velociraptor]
+  blender -b -P pipeline/blender_turntable.py -- --in work/raw-meshes/deinonychus_s1.glb
+          [--out work/turntables/deinonychus_s1.png] [--size 512] [--asset deinonychus]
 
 --out defaults to <workDir>/turntables/<input name>.png (workDir from local.settings.jsonc).
 --asset applies that registry entry's modelYawDegrees and scale from game/data/assets.jsonc

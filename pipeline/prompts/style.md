@@ -1,8 +1,8 @@
 # Style template
 
 The one place the game's look is defined for image generation (Qwen-Image with the
-Lightning 4-step LoRA, or Qwen-Image-Edit when an image goes in). `comfy_gen.py refs` builds
-every prompt as:
+Lightning 4-step LoRA, or Qwen-Image-Edit when an image goes in). `comfy_gen.py refs` and
+`redraw` build their prompts as:
 
 ```
 [From reference]  subject  Pose  View  Style
@@ -49,6 +49,44 @@ Redraw the creature in image 1 as a fierce low-poly 3D video game creature model
 its body shape and proportions.
 ```
 
+## Pose transfer
+
+Used by `comfy_gen.py pose`: image 1 is the creature in any pose, image 2 a black outline
+of the standing pose. Features the outline doesn't show (a raised claw) tend to get lost;
+`--keep` fills `{keep}` with ones to hold on to, e.g. "long hooked hand claws".
+
+```
+Redraw the dinosaur from image 1 in the standing pose shown by the outline in image 2: both
+feet on the ground, legs under the hips, body level, tail straight back. Keep everything else
+about the dinosaur from image 1: its style, colors and head{keep}. Side view facing left,
+plain white background, one dinosaur only.
+```
+
+## Stylize
+
+Used by `comfy_gen.py stylize`, the step that sets the final look: a smooth, stylized
+creature with somewhat exaggerated proportions. The early images keep the low-poly
+**Style** above because it gives clean shapes and flat colors to work from. `{species}` is
+the asset id; `{traits}` is written per asset (see **Writing the traits**).
+
+```
+Restyle this {species} as a creature from a stylized 3D action-adventure game: {traits}.
+Smooth 3D render, same standing pose, exact side view facing left, same colors, plain white
+background.
+```
+
+## Front view
+
+Used by `comfy_gen.py views` with the multi-angle camera LoRA, whose training prompts are
+Chinese; the English half says the same thing. "Rotate 90 degrees" only turns about 60
+degrees, and asking for a rear view gave the other side profile, so the front view is
+asked for directly and the right view is the side view mirrored.
+
+```
+将镜头转为正面视角，平视 Turn the camera to a straight-on front view of the dinosaur, eye level,
+the dinosaur faces the camera.
+```
+
 ## Body plans
 
 The canvas follows the body. Long, low animals need a wide canvas, or the model draws an
@@ -83,6 +121,28 @@ manifest). Rules learned from testing (details in the run logs):
 8. **Variety comes from wording, not seeds.** With Lightning, seeds barely change the image.
 
 Dinos are always bare. Riders, saddles, armor and guns are separate assets on sockets.
+
+## Writing the traits
+
+The `--traits` text for `stylize` says how the creature is exaggerated. Rules learned
+from the deinonychus run:
+
+1. **Name the kind of creature it stays**, then the exaggerations: "still a lean raptor
+   with a long, narrow snout, but with a larger head with a bold brow ridge, ...".
+   Without the anchor, strong wording turns anything into a cartoon T. rex.
+2. **Exaggerate with plain words** (larger, bold, chunky, muscular). Percentages ("head 20%
+   larger") change nothing.
+3. **Say "mouth closed"**: strong wording opens the mouth.
+4. **Leave out small signature features** such as a sickle claw on the foot: any mention
+   draws a detached crescent next to the foot. Those become separate 3D pieces.
+
+Example traits (deinonychus):
+
+```
+still a lean raptor with a long, narrow snout, but with a larger head with a bold brow
+ridge, mouth closed, a muscular neck and chest, chunky powerful thighs and long hooked hand
+claws
+```
 
 Example subject (velociraptor):
 

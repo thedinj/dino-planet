@@ -32,7 +32,7 @@ next to others of the same kind.
 **`game/data/assets.jsonc`** (always):
 - `id`, `kind`, `model: "res://models/<id>.glb"` (the file needn't exist yet).
 - `collider` with `radius` and `height` in meters. The placeholder is drawn from it, so
-  size it sensibly relative to its siblings (raptor 0.6 × 1.4, trex 1.3 × 3.2).
+  size it sensibly relative to its siblings (deinonychus 0.7 × 1.3, trex 1.3 × 3.2).
 - Sockets the kind needs, in the asset's own space (Y up, facing -Z, meters):
   - dino: `saddle` plus at least one `turret*`. Scale positions from the nearest sibling
     by collider height. Side mounts get `yawDegrees`.
@@ -47,7 +47,7 @@ next to others of the same kind.
   `pipeline/prompts/style.md`).
 - `prompt`: leave it `""`. `/generate-model` writes it with the user at its first gate.
 - `colors.base` / `colors.belly` hex (placeholders; `/generate-model` samples the real ones),
-  `size` (meters, roughly the collider's largest dimension), `tris` (dino 3000–4000,
+  `size` (meters, roughly the collider's largest dimension), `tris` (dino ~12000,
   weapon ~800, prop ~1000).
 
 **`game/data/tuning.jsonc`**:

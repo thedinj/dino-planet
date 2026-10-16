@@ -5,15 +5,15 @@
 {
   "assets": [
     {
-      "id": "velociraptor",
+      "id": "deinonychus",
       "kind": "dino",
-      "model": "res://models/velociraptor.glb",
+      "model": "res://models/deinonychus.glb",
       "scale": 1.0,
       "modelYawDegrees": 0,
-      "collider": { "radius": 0.6, "height": 1.4 },
+      "collider": { "radius": 0.7, "height": 1.3 },
       "sockets": {
-        "saddle": { "position": [0, 1.15, 0.15] },
-        "turret": { "position": [0, 1.3, 0.55] }
+        "saddle": { "position": [0, 0.9, -0.2] },
+        "turret": { "position": [0, 0.75, 0.3] }
       }
     },
     {

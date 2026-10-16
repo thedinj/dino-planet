@@ -4,18 +4,23 @@
 //            at /generate-model's first gate. style.md wraps it with pose, view and style.
 // "bodyPlan" biped | quadruped | long_quadruped; picks the image canvas (and later the rig).
 // "reference" optional image under work/inputs/<id>/ to redraw (gitignored, never committed).
-// "colors"   sampled from the picked reference image by image_tools.py colors.
+// "traits"   the exaggerations for comfy_gen.py stylize (rules in prompts/style.md).
+// "colors"   sampled from the stylized side view by image_tools.py colors.
+// "parts"    optional procedural add-ons from blender_parts.py, as "name" or "name:scale".
 {
   "assets": [
     {
-      "id": "velociraptor",
+      "id": "deinonychus",
       "kind": "dino",
-      "request": "velociraptor",
+      "request": "a man-sized fast brutal hunter with a hooked inner claw on its foot",
       "bodyPlan": "biped",
-      "prompt": "A fierce bare velociraptor with lightweight, birdlike proportions: the head is small, about as long as the thigh, low and narrow like a wedge, with a slender upturned snout; long arms folded with three-fingered clawed hands; a lean body balanced over long slim legs; a stiff rod-like tail as long as the body; olive green with a tan belly.",
-      "colors": { "base": "#6B8E4E", "belly": "#C9B98A" },
-      "size": 2.0,
-      "tris": 3000
+      "reference": "bakker_1969.jpg",
+      "prompt": "A fierce bare deinonychus, a lean hunting dinosaur with a long, low, narrow head, mouth closed, long three-fingered arms with hooked claws, a level body, and a long, stiff, straight tail; on each foot the inner toe is raised and carries one very large, dark, hooked sickle claw; sage grey-green with a pale yellow-green belly.",
+      "traits": "still a lean raptor with a long, narrow snout, but with a larger head with a bold brow ridge, mouth closed, a muscular neck and chest, chunky powerful thighs and long hooked hand claws",
+      "colors": { "base": "#80957D", "belly": "#B8CE8D" },
+      "parts": ["sickle_claw:1.3"],
+      "size": 3.0,
+      "tris": 12000
     },
     {
       "id": "trex",
@@ -25,7 +30,7 @@
       "prompt": "A fierce bare tyrannosaurus with massive, heavy proportions: the head is huge, as long as the thigh is tall, deep and boxy with a broad jaw lined with teeth; a short thick neck; tiny two-fingered arms no longer than the head is deep; a deep, heavy body balanced over two thick pillar-like legs with three-toed feet; a thick tail that tapers over the length of the body; brown with a pale sandy belly.",
       "colors": { "base": "#9C7A55", "belly": "#D9C49A" },
       "size": 5.0,
-      "tris": 4000
+      "tris": 12000
     },
     {
       // Gear gets its own prompt template later; refs refuses non-dino kinds until then.

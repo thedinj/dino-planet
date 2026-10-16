@@ -1,13 +1,17 @@
 ---
 name: generate-model
-description: Generate the 3D model for a registered Dino Planet asset with the local ComfyUI pipeline (Qwen-Image reference images, optionally redrawn from a user's photo or sketch -> Hunyuan3D-2mv mesh -> Blender cleanup -> game/models/<id>.glb), stopping for the user's sign-off at each review gate. Use when the user asks to generate, make or regenerate a model for an asset.
-argument-hint: <asset-id> [plain description] [--ref=<image>] [--from=prompt|refs|shape|cleanup|fit] [--turbo]
+description: Generate the 3D model for a registered Dino Planet asset with the local ComfyUI pipeline (a standing side view from a description, photo or drawing -> stylize -> front view -> Hunyuan3D-2mv mesh -> symmetric Blender cleanup -> game/models/<id>.glb), stopping for the user's sign-off at each review gate. Use when the user asks to generate, make or regenerate a model for an asset.
+argument-hint: <asset-id> [plain description] [--ref=<image>] [--from=prompt|side|stylize|views|shape|cleanup|fit] [--turbo]
 ---
 
 # /generate-model
 
 Turn a registered asset into a real model: `$ARGUMENTS`. The first word is the asset id.
 Anything after it, other than flags, is the user's plain description of what they want.
+
+The target (CLAUDE.md): a symmetric creature with stylized, somewhat exaggerated
+proportions, smooth-shaded at about 12k triangles, standing in a neutral pose (feet down,
+mouth closed, tail level) so it can be rigged.
 
 The user signs off at every gate marked **GATE**. At a gate: send the images with
 SendUserFile (`display: "render"`), say in a few lines what you see and what you recommend,
@@ -18,22 +22,30 @@ read, including flaws.
 ## Tools
 
 All run from the repo root. Don't call ComfyUI, Blender or Godot any other way.
+`comfy_gen.py <command> --help` lists every option.
 
 | Step | Command |
 |---|---|
 | Check ComfyUI | `python pipeline/comfy_gen.py check` |
-| Reference images | `python pipeline/comfy_gen.py refs <id> [--prompts work/refs/<id>/prompts.json] [--ref <image>] [--batch 1] [--seed N]` |
-| Fix-up or extra view | `python pipeline/comfy_gen.py edit <id> --image <png> --prompt "<instruction>" --name <name>` |
-| Raw mesh | `python pipeline/comfy_gen.py shape <id> --left <png> [--front <png>] [--back <png>] [--seed N] [--turbo]` |
+| Side view from a description | `python pipeline/comfy_gen.py refs <id> [--prompts work/refs/<id>/prompts.json] [--ref <image>] [--seed N]` |
+| Side view following a picture's outline | `python pipeline/comfy_gen.py redraw <id> --guide <image> [--subject "..."] [--flip] [--clean 1.8] [--name N]` |
+| Pose outline | `python pipeline/image_tools.py outline <standing picture> work/refs/<id>/outline_stand.png` |
+| Re-pose to standing | `python pipeline/comfy_gen.py pose <id> --image <png> --outline <png> [--keep "..."] [--seed N]` |
+| Stylize | `python pipeline/comfy_gen.py stylize <id> --image <png> [--traits "..."] [--seed N] [--name N]` (default: manifest `traits`) |
+| Front and right views | `python pipeline/comfy_gen.py views <id> --image <side png> [--seed N]` |
+| Fix-up | `python pipeline/comfy_gen.py edit <id> --image <png> --prompt "<instruction>" --name <name>` |
+| Raw mesh | `python pipeline/comfy_gen.py shape <id> --left <png> --front <png> --right <png> [--seed N] [--turbo]` |
 | Colors | `python pipeline/image_tools.py colors <png>` |
 | Contact sheet | `python pipeline/image_tools.py sheet <out.png> <png>...` |
 | Turntable sheet | `pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline/blender_turntable.py -- --in <glb> [--out <png>] [--asset <id>] [--yaw N]` |
-| Cleanup | `pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline/blender_cleanup.py -- --in <raw glb> --out work/cleaned/<id>_s<seed>.glb --tris T --size S --color C --belly B [--yaw auto\|N] [--voxel V] [--flat]` |
+| Cleanup | `pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline/blender_cleanup.py -- --in <raw glb> --out work/cleaned/<id>_s<seed>.glb --tris T --size S --color C --belly B --belly-image <stylized png> [--sym neg\|pos] [--yaw auto\|N] [--voxel V]` |
 
 They print `wrote <path>`, `sheet <path>`, `[turntable] <path>` and `[ok] ...` lines; read
-paths from there. Timings on the 8 GB card: about 105 s per reference prompt (first one
-includes model loading), about 70-110 s per edit, about 1 min per shape. Run them in the
-foreground with a 10 minute timeout, one command at a time (ComfyUI runs one job anyway).
+paths from there. Timings on the 8 GB card: 2-5 min per image step (`refs`, `pose`,
+`stylize`, `views`), up to 10 min for `redraw`, 2-3 min per shape, seconds for cleanup.
+Run them in the foreground with a 10 minute timeout, one command at a time (ComfyUI runs
+one job anyway). ComfyUI needs most of the 32 GB of RAM: if a run dies or ComfyUI stops
+answering, ask the user to restart it and close other programs; never start it yourself.
 
 **Turntable sheet layout:** top-left front, top-right left side, bottom-left back,
 bottom-right three-quarter. A red bar on the ground marks the front (game forward, -Z).
@@ -46,7 +58,7 @@ means it's diagonal.
 ## 0. Preconditions
 
 1. The id must be in `pipeline/manifest.jsonc` and `game/data/assets.jsonc`. If not, stop
-   and suggest `/new-asset <id>` first. Only `kind: "dino"` has a prompt template so far;
+   and suggest `/new-asset <id>` first. Only `kind: "dino"` has prompt templates so far;
    for gear, say so and stop.
 2. `pipeline/local.settings.jsonc` must exist with `comfyUiUrl` and `blenderExe`.
 3. `python pipeline/comfy_gen.py check` must print `ready`. If it can't reach ComfyUI, ask
@@ -57,90 +69,118 @@ means it's diagonal.
 Keep a log in `work/runs/<id>.md` (gitignored): one line per step with the date, the command,
 the prompt variant, what the user picked and why. Later runs and `--from` rely on it.
 
-## 1. The prompt
+## 1. The source
 
-Read `pipeline/prompts/style.md`, especially **Writing the subject**. The subject is only
-the creature (anatomy, proportions, colors); style.md adds pose, view and style.
+Read `pipeline/prompts/style.md` first: it holds every prompt block and the rules for
+writing subjects and traits.
 
 1. The user's plain description is the `request`: from the arguments, else the manifest's
    `request`. If the manifest has none and no description was given, ask for one.
 2. Set the manifest's `bodyPlan` if it's missing (biped, quadruped, long_quadruped; see the
-   table in style.md). It sets the canvas.
+   table in style.md).
 3. Reference image: `--ref=<image>`, or the manifest's `reference`, or an image the user
    attached or named. Copy it to `work/inputs/<id>/` (gitignored: found art and photos are
    never committed) and record its file name in the manifest's `reference`. Look at it and
-   say what it will contribute (shape, pose, proportions) and anything to watch, like an
-   open mouth or a raised foot, which carry over.
-4. Write **3 subject variants** that follow the rules, different in wording, not just
-   adjectives (variety comes from wording; seeds barely change anything). With a reference
-   the subject can be shorter, since the image carries the shape; still name the species
-   and colors. Save them to `work/refs/<id>/prompts.json` as `[{"name": "a_short_slug",
-   "prompt": "..."}]`.
+   say what it will contribute and what to watch.
+4. Pick the route for the side view:
+   - **No picture:** `refs` from a written subject. Write **3 subject variants** that follow
+     **Writing the subject** (different in wording, not just adjectives) to
+     `work/refs/<id>/prompts.json` as `[{"name": "a_short_slug", "prompt": "..."}]`.
+   - **A clean side-on picture** (a toy photo, side-view art): `refs --ref`. It keeps the
+     picture's shape and pose, and tends to keep its rendering style too.
+   - **A drawing, a busy photo or art in an odd style:** `redraw --guide` with one subject.
+     It follows the outline almost exactly and takes the look from the prompt. The
+     creature must face left (`--flip` otherwise). Clean the guide first if it has a
+     ground line, signature, text or other animals: paint them white with a short Pillow
+     script into `work/refs/<id>/guide.png`. Use `--clean 1.8` for scans and stippled or
+     hatched ink.
 
-**GATE 1: approve the prompts.** Show the request, the body plan, the reference (if any) and
-the 3 subjects. Options: generate with these, or edit them first. Cheap to fix now, a
-few minutes per batch after.
+**GATE 1: approve the prompts and route.** Show the request, body plan, reference, route
+and subject(s). Options: go ahead, or edit first.
 
-## 2. Reference images
+## 2. Standing side view
 
-Run `refs <id> --prompts work/refs/<id>/prompts.json` (plus `--ref` when there is one).
-One image per variant is enough. It writes a contact sheet.
+Run the route from step 1. Judge each image: side view facing left, whole body in frame,
+mouth closed, right anatomy, bare (no gear, riders or extra creatures). Its **pose** is
+fixed in the next step if needed, so a running or leaping pose is fine here.
 
-Judge every image against: side view facing left (prompt-only images often come out
-slightly three-quarter on a light grey backdrop; that meshes fine), whole body in frame
-including the tail, all feet down, mouth closed, matches the subject's anatomy, bare (no
-gear, riders or extra creatures). Note which ones fail and why.
+If the creature isn't standing neutrally, re-pose it:
+1. Get a standing outline: `image_tools.py outline` on any picture of a similar animal
+   standing side-on, facing left: an earlier `refs` image, a `refs` run with a short
+   prompt just for the pose, or the user's own. Look at the outline: one closed shape,
+   feet on the ground line, nothing else in it.
+2. `pose --image <side view> --outline <outline>`, with `--keep` naming features that must
+   survive (e.g. "long hooked hand claws").
 
-**GATE 2: pick a reference.** Send the sheet. Options: use image X (recommend the best),
-fix a detail on one with `edit`, or rewrite the prompts (back to Gate 1).
-- **Fix-ups:** for a missing small feature, run `edit` on the picked image with a precise
-  instruction ending in "Change nothing else.", e.g. "The second toe of each foot is lifted
-  and carries one very large, dark, hooked claw. Change nothing else." Show the result at
-  this same gate.
-- After 2 rejected rounds, say what keeps failing and suggest a different approach (a
-  reference image, a fix-up, a different body plan) instead of more rewording.
-- When an image is picked, write its subject to the manifest's `prompt` (show the edit) and
-  run `image_tools.py colors` on it. Show the two colors and write them to the manifest's
-  `colors` on a yes.
+Features the outline doesn't show tend to get lost. Small signature features (a raised
+sickle claw, horns' tips) are expected to go; they become 3D add-ons later. Say so.
 
-Extra views are optional: `edit` the picked image with "Show this exact same creature from
-directly in front, full body. Keep the same shapes, proportions and colors. Plain pure white
-background." (and the same for behind). They give a straighter mesh but cost about 2 min
-more, and a wrong extra view hurts more than a missing one. Offer them only if the
-single-view mesh comes out wrong.
+**GATE 2: pick the standing side view.** Send a sheet of the candidates. Options: use image
+X, re-pose with another seed or outline, fix a detail with `edit` (end the instruction
+with "Change nothing else."), or back to Gate 1. After 2 rejected rounds, say what keeps
+failing and suggest a different route instead of more rewording.
 
-## 3. Raw mesh
+When one is picked, write its subject to the manifest's `prompt` (show the edit).
 
-Run `shape <id> --left <picked png>` (plus `--front`/`--back` if approved; `--turbo` only if
-the user asked for speed). Wide canvases are padded to a square automatically. Render a
+## 3. Stylize
+
+Write the `--traits` for this creature following **Writing the traits** in style.md (anchor
+the kind of creature, plain exaggeration words, "mouth closed", no small signature
+features). Run `stylize` with 2 seeds; seeds vary edits more than they vary `refs`.
+
+Judge: still the same species at a glance, proportions pushed (head, chest, thighs) but
+not cartoonish, mouth closed, same standing pose, exact side view (a three-quarter turn
+hurts the mesh), no detached bits. Then run `image_tools.py colors` on the pick.
+
+**GATE 3: approve the stylized side view.** Send the sheet. Options: use image X, rerun with
+reworded traits, or skip stylizing (use the Gate 2 image). On a yes, show the two colors and
+write them to the manifest's `colors`, and the traits to its `traits`.
+
+## 4. Front view
+
+Run `views --image <stylized pick>`. It writes a raw front view, the front view scaled to the
+side view's height and ground line, the mirrored right view, and a sheet; it prints the
+`shape` command to run next.
+
+Judge the front view: straight on, symmetric, legs under the body, arms tucked, the same
+creature and colors as the side view. A slightly turned view or one with the head looking
+aside makes a crooked mesh: reroll with `--seed`.
+
+**GATE 4: approve the views.** Send the sheet. Options: approve, reroll the front view, or go
+back to Gate 3.
+
+## 5. Raw mesh
+
+Run the printed `shape` command (`--turbo` only if the user asked for speed). Render a
 turntable of the raw mesh.
 
-Check the silhouette against the reference: all limbs present, no fused blobs, no missing
-tail or head, nothing large floating free. Raw single-view meshes usually sit diagonally;
-the cleanup's automatic yaw fixes that.
+Check against the views: all limbs present, no fused blobs, no missing tail or head,
+nothing large floating free, front tile symmetric with legs under the body.
 
-**GATE 3: approve the mesh.** Send the turntable sheet. Options: approve, reroll the shape
-seed, go back to Gate 2 for a different image, or add front/back views.
+**GATE 5: approve the mesh.** Send the turntable sheet. Options: approve, reroll the shape
+seed, or go back to Gate 4.
 
-## 4. Cleanup
+## 6. Cleanup
 
 Run the cleanup into `work/cleaned/`, never straight into `game/models/`. Take `--tris`,
 `--size`, `--color`, `--belly` from the manifest entry (`colors.base`/`colors.belly`, drop
-the `#`; an empty belly means `--belly ""`). Leave `--yaw` at its default `auto`: it lines
-the long axis up with forward and prints the yaw it chose. For bipeds and quadrupeds use
-`--flat` (the faceted low-poly look). Turntable the result with `--asset <id>`.
+the `#`; an empty belly means `--belly ""`). Pass `--belly-image <stylized pick>` so the
+belly line follows the picture. Leave `--yaw` at `auto` and `--sym` at its default (`neg`);
+both print what they did. If the manifest lists `parts`, add them next with
+`pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline/blender_parts.py -- --in <cleaned glb> --out <glb> --part <name[:scale]>`
+once per listed part (the script's header lists the parts it knows). Turntable the result with `--asset <id>`.
 
-Check the facing first. If it's wrong, rerun with `--yaw <printed value + 180>` (a
-head/tail swap) or the value you work out from the sheet. Then look for: thin parts (arms,
-tails, claws) broken into floating bits, holes, belly color in odd places, a melted look.
-Knobs: the default `--voxel` is 0.4% of `--size` (0.008 for a 2 m dino); smaller (0.005)
-keeps thinner parts, 0.02+ melts arms, 0.04-0.06 is blobby. More `--tris` keeps detail.
-Only two colors survive (base and belly); plates, stripes and armor colors are lost.
+Check the facing first. If it's wrong, rerun with `--yaw <printed value + 180>` (a head/tail
+swap) or the value you work out from the sheet. Then look for: feet splayed or thinned (rerun
+with `--sym pos` and compare), thin parts broken into floating bits, holes, belly color in
+odd places, a melted look. Knobs: the default `--voxel` is 0.4% of `--size`; smaller (0.005
+for a 2-3 m dino) keeps thinner parts, 0.02+ melts arms. More `--tris` keeps detail. Only two
+colors survive (base and belly).
 
-**GATE 4: approve the cleaned model.** Send the sheet, with the raw sheet for comparison
-if useful. Options: approve, or rerun cleanup with the knob changes you suggest.
+**GATE 6: approve the cleaned model.** Send the sheet, with the raw sheet for comparison if
+useful. Options: approve, or rerun cleanup with the knob changes you suggest.
 
-## 5. Fit in the game
+## 7. Fit in the game
 
 1. Copy the approved file to `game/models/<id>.glb`.
 2. Registry (`game/data/assets.jsonc`): keep `modelYawDegrees` at 0 (the yaw is baked by
@@ -152,23 +192,23 @@ if useful. Options: approve, or rerun cleanup with the knob changes you suggest.
 3. `pwsh -NoProfile -File tools/godot.ps1 --headless --path game --import`, then
    `dotnet test tests/Core.Tests`, then run the `/visual-check` steps with `--sockets`.
 
-**GATE 5: approve the fit.** Send the final `--asset` sheet and the in-game screenshot.
+**GATE 7: approve the fit.** Send the final `--asset` sheet and the in-game screenshot.
 List every registry change (before -> after). Options: approve, or adjust specific sockets,
 scale or collider.
 
-## 6. Finish
+## 8. Finish
 
 1. Record the final choices in `work/runs/<id>.md`.
-2. Report: files written, the prompt variant, knobs, registry changes, anything still
-   imperfect.
+2. Report: files written, the prompts and traits, knobs, registry changes, anything still
+   imperfect (lost signature features especially).
 3. Don't commit on your own. Offer to run the `reviewer` agent and commit
-   `game/models/<id>.glb` plus the data changes. **GATE 6:** commit only on a yes.
+   `game/models/<id>.glb` plus the data changes. **GATE 8:** commit only on a yes.
 
 ## Notes
 
 - Everything under `work/` is gitignored and safe to throw away; `game/models/` is
-  committed, so only approved models go there. Never copy a user's reference image
-  anywhere outside `work/`.
+  committed, so only approved models go there. Never copy a user's reference image, or
+  anything traced or redrawn from it, outside `work/`.
 - The Qwen models and Hunyuan3D don't fit in 8 GB together. Every command frees ComfyUI's
   models first. If a shape run still fails with out-of-memory, retry with `--octree 192`.
 - Outputs also land in ComfyUI's own `output/dinoplanet/` folder. That's harmless; leave it.

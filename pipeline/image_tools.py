@@ -4,15 +4,18 @@ Image helpers for the asset pipeline. Needs Pillow (`pip install pillow`).
   python pipeline/image_tools.py colors <png>              base and belly hex from an image
   python pipeline/image_tools.py sheet  <out.png> <png>... labeled contact sheet for review
   python pipeline/image_tools.py pad    <in.png> <out.png>  pad to a square with white
+  python pipeline/image_tools.py align  <ref.png> <in.png> <out.png>
+                                       scale in.png's creature to ref's height and ground line
+  python pipeline/image_tools.py outline <in.png> <out.png> silhouette outline (pose guide)
 
-comfy_gen.py imports pad() and sheet() from here.
+comfy_gen.py imports pad(), sheet() and align() from here.
 """
 
 import sys
 from pathlib import Path
 
 try:
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 except ImportError:
     sys.exit("image_tools.py needs Pillow: pip install pillow")
 
@@ -44,6 +47,48 @@ def sheet(dst, files, tile=360):
         out.paste(im, (x + (tile - im.width) // 2, y + label + (tile - im.height) // 2))
     Path(dst).parent.mkdir(parents=True, exist_ok=True)
     out.save(dst)
+    return dst
+
+
+def _mask(im):
+    """White-on-black mask of the creature on a white background: pixels clearly darker than
+    white that aren't the near-black floor shadow some views get."""
+    r, g, b = im.convert("RGB").split()
+    darkest = ImageChops.darker(ImageChops.darker(r, g), b)
+    brightest = ImageChops.lighter(ImageChops.lighter(r, g), b)
+    return ImageChops.multiply(darkest.point(lambda v: 255 if v < 215 else 0),
+                               brightest.point(lambda v: 255 if v > 70 else 0))
+
+
+def align(ref, src, dst):
+    """Scale src so its creature is as tall as ref's and stands on the same ground line,
+    centered on a white canvas of ref's size. Multi-view shape inputs must agree in scale.
+    Returns dst."""
+    ref_im, im = Image.open(ref).convert("RGB"), Image.open(src).convert("RGB")
+    rb, ib = _mask(ref_im).getbbox(), _mask(im).getbbox()
+    if not rb or not ib:
+        sys.exit(f"align: no creature found in {ref if not rb else src}")
+    s = (rb[3] - rb[1]) / (ib[3] - ib[1])
+    crop = im.crop(ib).resize((round((ib[2] - ib[0]) * s), round((ib[3] - ib[1]) * s)), Image.Resampling.LANCZOS)
+    out = Image.new("RGB", ref_im.size, "white")
+    out.paste(crop, (round((ref_im.width - crop.width) / 2), rb[3] - crop.height))
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    out.save(dst)
+    return dst
+
+
+def outline(src, dst, width=5):
+    """Black outline of the creature's silhouette on white: the pose guide for
+    comfy_gen.py pose. Returns dst."""
+    mask = _mask(Image.open(src))
+    # Fill holes (gaps between legs stay open: they touch the background).
+    filled = ImageOps.expand(mask, 1, 0)  # a background border, so one fill reaches all of it
+    ImageDraw.floodfill(filled, (0, 0), 128)
+    solid = filled.point(lambda v: 0 if v == 128 else 255).crop((1, 1, mask.width + 1, mask.height + 1))
+    inner = solid.filter(ImageFilter.MinFilter(width if width % 2 else width + 1))
+    edge = ImageChops.subtract(solid, inner)
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    ImageOps.invert(edge).convert("RGB").save(dst)
     return dst
 
 
@@ -93,7 +138,7 @@ def _hex(c):
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ("colors", "sheet", "pad"):
+    if len(sys.argv) < 3 or sys.argv[1] not in ("colors", "sheet", "pad", "align", "outline"):
         sys.exit(__doc__)
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "colors":
@@ -101,6 +146,10 @@ def main():
         print(f"base {base}\nbelly {belly or '(none)'}")
     elif cmd == "sheet":
         print(f"sheet {sheet(args[0], args[1:])}")
+    elif cmd == "align":
+        print(f"wrote {align(args[0], args[1], args[2])}")
+    elif cmd == "outline":
+        print(f"wrote {outline(args[0], args[1])}")
     else:
         print(f"wrote {pad(args[0], args[1])}")
 

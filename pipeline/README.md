@@ -10,31 +10,71 @@ Where things live:
 | Your machine's paths                              | `pipeline\local.settings.jsonc` | No (gitignored)          |
 | Final cleaned models                              | `game\models\*.glb`             | Yes (small, no textures) |
 
-Goal: one dino from prompt to a Tunic-style model in Godot.
+Goal: one dino from a description or a picture to a game model in Godot: symmetric,
+stylized, smooth-shaded at about 12k triangles, in a neutral standing pose for rigging.
 
 **Scripted version (the normal way):** with ComfyUI Desktop running,
 `/generate-model <id> [plain description] [--ref=<photo or sketch>]` in Claude Code runs the
-steps below for an asset already registered with `/new-asset`. Claude turns your plain
-description into a detailed prompt, and you approve the prompts, the reference image, the
-raw mesh, the cleanup and the in-game fit. The pieces it uses (also runnable by hand):
+steps below for an asset already registered with `/new-asset`. Claude writes the prompts,
+and you approve each stage. The pieces it uses (also runnable by hand):
 
-- `python pipeline/comfy_gen.py check | refs <id> | edit <id> | shape <id>`: drives
-  ComfyUI's API with the workflows in `workflows/`. Prompts are built from
-  `prompts/style.md` around the manifest's `prompt`.
-- `python pipeline/image_tools.py colors | sheet | pad`: samples model colors from an image,
-  makes review sheets, pads wide images to a square. Needs Pillow (`pip install pillow`).
+- `python pipeline/comfy_gen.py check | refs | redraw | pose | stylize | views | edit | shape`:
+  drives ComfyUI's API with the workflows in `workflows/`. Prompts come from
+  `prompts/style.md`. Run it with `--help` for every option.
+- `python pipeline/image_tools.py colors | sheet | pad | align | outline`: samples model
+  colors, makes review sheets, pads wide images to a square, scales a view to match
+  another, traces a pose outline. Needs Pillow (`pip install pillow`).
 - `pipeline/blender_turntable.py`: renders a 2x2 review sheet of a `.glb`; `--asset <id>`
   shows it posed as in the game, with sockets.
-- `pipeline/blender_cleanup.py`: turns (automatically by default), sizes, remeshes,
-  decimates and colors the raw mesh.
+- `pipeline/blender_cleanup.py`: turns (automatically by default), sizes, straightens and
+  mirrors, remeshes, decimates and colors the raw mesh.
 
-The manual steps follow.
+### The chain
+
+The shape model (Hunyuan3D-2mv) meshes whatever it's shown, pose included, and from one side
+view it has to guess the width, which comes out bent and lopsided. So the pictures are
+brought to a standing side view first, and a front view is added:
 
 ```
-Qwen-Image reference  ->  Hunyuan3D-2mv shape (.glb)  ->  blender_cleanup.py  ->  Godot + toon shader
-  (ComfyUI; or Qwen-Image-Edit          (ComfyUI)              (Blender)              (your project)
-   from your photo or sketch)
+ 1. side view      refs (from a description), or
+                   redraw (a drawing or photo, following its outline with a ControlNet)
+ 2. pose           only if it isn't standing: pose transfer onto a standing outline
+ 3. stylize        restyle with exaggerated, game-like proportions
+ 4. views          front view (multi-angle camera LoRA), scaled to match; right = mirrored side
+ 5. shape          Hunyuan3D-2mv from left + front + right -> raw .glb
+ 6. cleanup        straighten, mirror one half, remesh, 12k tris, two vertex colors with the
+                   belly line copied from the stylized picture; then blender_parts.py adds
+                   small features the AI steps can't make (the sickle claw)
+ 7. Godot          game/models/<id>.glb, sockets fitted in assets.jsonc
 ```
+
+Each image step takes about 2 to 5 minutes on an 8 GB card, `redraw` up to 10 (it runs 20
+steps without the Lightning LoRA), the shape about 2 to 3, the cleanup seconds. Example, the
+deinonychus from a 1969 pen drawing:
+
+```powershell
+python pipeline/comfy_gen.py redraw  deinonychus --guide work/inputs/deinonychus/drawing.png --flip --clean 1.8
+python pipeline/image_tools.py outline <a standing picture of a similar animal> work/refs/deinonychus/outline_stand.png
+python pipeline/comfy_gen.py pose    deinonychus --image work/refs/deinonychus/redraw.png --outline work/refs/deinonychus/outline_stand.png
+python pipeline/comfy_gen.py stylize deinonychus --image work/refs/deinonychus/posed.png --traits "still a lean raptor with ..."
+python pipeline/comfy_gen.py views   deinonychus --image work/refs/deinonychus/stylized.png
+python pipeline/comfy_gen.py shape   deinonychus --left ...stylized.png --front ...stylized_front.png --right ...stylized_right.png
+pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline/blender_cleanup.py -- --in work/raw-meshes/deinonychus_s<seed>.glb `
+  --out work/cleaned/deinonychus.glb --size 3.0 --color 80957D --belly B8CE8D --belly-image work/refs/deinonychus/stylized.png
+pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline/blender_parts.py -- --in work/cleaned/deinonychus.glb `
+  --out work/cleaned/deinonychus_parts.glb --part sickle_claw:1.3
+```
+
+Things learned the hard way (details in `prompts/style.md`):
+
+- Text edits can't re-pose a creature reliably (claws vanish, bipeds turn four-legged);
+  pose transfer onto an outline can. It loses small features the outline doesn't show.
+- Small signature features (a raptor's sickle claw) don't survive: the image models draw
+  them detached, and the cleanup melts them. They're to become separate 3D pieces.
+- A generated right view is no better than the mirrored side view, and asking the camera
+  LoRA for a rear view gave the right profile instead.
+
+The manual, in-ComfyUI version of steps 1 and 5 follows.
 
 Pieces involved:
 
@@ -69,7 +109,7 @@ Everything below says `ComfyUI/` for that path.
 
 ## 2. Download the models
 
-About 53 GB in all. Put each file in the ComfyUI `models\` subfolder shown. The names must
+About 57 GB in all. Put each file in the ComfyUI `models\` subfolder shown. The names must
 match exactly; `python pipeline/comfy_gen.py check` reports anything missing.
 
 | Model | Folder | File | Size |
@@ -80,6 +120,8 @@ match exactly; `python pipeline/comfy_gen.py check` reports anything missing.
 | Qwen VAE (both) | `vae` | [`qwen_image_vae.safetensors`](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/vae) | 0.3 GB |
 | Lightning 4-step LoRA | `loras` | [`Qwen-Image-Lightning-4steps-V1.0.safetensors`](https://huggingface.co/lightx2v/Qwen-Image-Lightning/tree/main) | 1.7 GB |
 | Lightning 4-step LoRA for Edit | `loras` | [`Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors`](https://huggingface.co/lightx2v/Qwen-Image-Lightning/tree/main/Qwen-Image-Edit-2509) | 0.8 GB |
+| InstantX ControlNet Union for Qwen-Image (`redraw`) | `controlnet` | [`Qwen-Image-InstantX-ControlNet-Union.safetensors`](https://huggingface.co/Comfy-Org/Qwen-Image-InstantX-ControlNets/tree/main/split_files/controlnet) | 3.5 GB |
+| Multiple-angles camera LoRA for Edit (`views`) | `loras` | [`Qwen-Edit-2509-Multiple-angles.safetensors`](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files/loras) | 0.2 GB |
 | Hunyuan3D-2mv (multi-view shape) | `checkpoints` | [`model.fp16.safetensors`](https://huggingface.co/tencent/Hunyuan3D-2mv/blob/main/hunyuan3d-dit-v2-mv/model.fp16.safetensors), renamed to `hunyuan3d-dit-v2-mv.safetensors` | 2.5 GB |
 | _(optional)_ Hunyuan3D-2mv Turbo | `checkpoints` | [`model.fp16.safetensors`](https://huggingface.co/tencent/Hunyuan3D-2mv/blob/main/hunyuan3d-dit-v2-mv-turbo/model.fp16.safetensors), renamed to `hunyuan3d-dit-v2-mv-turbo.safetensors` | 2.5 GB |
 
@@ -134,27 +176,34 @@ Install Blender 4.2 or newer (blender.org) and put its path in `pipeline\local.s
 
 ```powershell
 pwsh -NoProfile -File tools/blender.ps1 -b -P pipeline\blender_cleanup.py -- `
-  --in work\raw-meshes\velociraptor.glb `
-  --out game\models\velociraptor.glb `
-  --tris 3000 --size 2.0 --color 6B8E4E --belly C9B98A --flat
+  --in work\raw-meshes\deinonychus_s7.glb `
+  --out work\cleaned\deinonychus.glb `
+  --size 3.0 --color 80957D --belly B8CE8D
 ```
 
 Knobs worth playing with:
 
 - `--voxel` — chunkiness, in meters. Default is 0.4% of `--size` (0.008 for a 2 m dino), which keeps arms and facets; `0.04`+ is blobby and melts thin parts; `0` = off (decimation may stall).
-- `--tris` — 1500–4000 is a good range for a Tunic-scale creature.
-- `--flat` — faceted low-poly look instead of smooth (the game's dino look).
+- `--tris` — default 12000, smooth-shaded. Fewer (3000-4000) with `--flat` gives a faceted
+  low-poly look instead.
+- `--belly-image` — the stylized side view the mesh came from. The belly color then follows
+  the picture's belly line (projected from the side, kept off up-facing surfaces). Without
+  it, the belly is wherever the surface faces down, which comes out patchy on smooth meshes.
+- `--sym` — `neg` (default) or `pos` picks which half of the body is mirrored onto the other,
+  after straightening the spine; if the feet splay or thin with one, try the other. `off`
+  leaves the mesh as generated (gear and props).
 - `--yaw` — `auto` (default) turns the mesh's long axis to face forward and prints the yaw
   it chose; if the head ends up backwards, rerun with that number + 180.
 - `python pipeline/image_tools.py colors <png>` suggests `--color` and `--belly` from the
   reference image.
-- Point `--in` at the whole `raw-meshes` folder and `--out` at `game\models` to batch everything.
+- Point `--in` at a folder and `--out` at another to clean every `.glb` in it with the same
+  options (one `--belly-image` for all, and no parts: run `blender_parts.py` per model after).
 
 ## 6. See it in the game
 
 No Godot scene work needed: the game builds every asset from its registry entry.
 
-1. Save the cleaned model as `game/models/<id>.glb` (e.g. `velociraptor.glb`).
+1. Save the cleaned model as `game/models/<id>.glb` (e.g. `deinonychus.glb`).
 2. Check `game/data/assets.jsonc` has an entry with that `model` path. New asset? Add one;
    copy an existing entry of the same `kind`.
 3. Let Godot import it: open the editor once, or run `godot --headless --path game --import`.

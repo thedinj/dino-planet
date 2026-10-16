@@ -1,6 +1,6 @@
 # Dino Planet
 
-Dinosaurs with laser cannons bolted on, in a chunky Tunic-style jungle. Built in Godot 4 + C#,
+Dinosaurs with laser cannons bolted on, in a toon-shaded, loosely Tunic-inspired jungle. Built in Godot 4 + C#,
 with nearly all game logic in a plain C# library so Claude can write and test it.
 
 ```
@@ -43,8 +43,8 @@ Machine-specific paths go in `pipeline\local.settings.jsonc` (gitignored). Copy
 5. Open Godot, **Import** `game/project.godot`, then press **Build** (hammer, top right) and
    **Run** (F5). The first open also imports shaders and models.
 
-You should see a placeholder raptor (yours) in a scattered jungle, with enemy raptors closing in
-and a T-rex to the north.
+You should see your deinonychus in a scattered jungle, with enemy deinonychus closing in and a
+T-rex (still a placeholder) to the north.
 
 ## Controls
 
